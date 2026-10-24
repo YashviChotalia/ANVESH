@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, authApi } from "@/lib/api";
-import { PUBLIC_PATHS, SessionProvider, useSession } from "@/lib/session";
+import { OPEN_PATHS, PUBLIC_PATHS, SessionProvider, useSession } from "@/lib/session";
 import type { Health } from "@/lib/types";
 import { useWorkspace, workspaceChosen } from "@/lib/workspace";
 
@@ -33,7 +33,7 @@ const ROLE_LABEL: Record<string, string> = { operator: "Operator", supervisor: "
 function Frame({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const { me, ready, can } = useSession();
-  if (PUBLIC_PATHS.some((p) => path.startsWith(p))) return <>{children}</>;
+  if ([...PUBLIC_PATHS, ...OPEN_PATHS].some((p) => path.startsWith(p))) return <>{children}</>;
   if (!ready || !me) return <div className="min-h-screen bg-bg" />;
   return <Chrome can={can} me={me}>{children}</Chrome>;
 }

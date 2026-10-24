@@ -122,6 +122,7 @@ def ingest_audio(db: Session, case: Case, data: bytes, filename: str, mime: str,
         if rec not in case.recordings:
             case.recordings.append(rec)
         summarise_voice(case)
+        db.flush()  # persist before callers refresh the case
         if rec.voice_auth.get("verdict") in ("likely_synthetic", "needs_verification"):
             audit.record(db, actor, "voice.flagged", case.id, {"recording_id": rec.id, "verdict": rec.voice_auth["verdict"],
                                                               "score": rec.voice_auth.get("score")})
@@ -343,6 +344,14 @@ def refine_recording(case_id: str, rec_id: str, actor: str = "system") -> None:
     with SessionLocal() as db:
         case = get_case(db, case_id)
         old = [s for s in case.segments if s.recording_id == rec_id]
+        new_chars = sum(len(s["text"]) for s in res["segments"])
+        if old and new_chars < 0.4 * sum(len(s.text or "") for s in old):
+            # the accurate pass recovered much less speech than the live draft: keep the draft
+            log.warning("refine of %s kept the live draft (%d vs %d characters)", rec_id, new_chars,
+                        sum(len(s.text or "") for s in old))
+            case.processing = None
+            db.commit()
+            return
         labels = {round(s.start): s.speaker for s in old if s.speaker}
         for s in old:
             db.delete(s)

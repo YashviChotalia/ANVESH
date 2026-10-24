@@ -125,6 +125,7 @@ def _clean_segments(segs, offset: float, hotwords: str, stats: dict | None = Non
 
 class ASR(_Lazy):
     name = "asr"
+    live = True  # the live model favours speed: one decoding pass, no temperature fallback
     last_stats: dict = {}
     license = "MIT (faster-whisper, Whisper weights)"
 
@@ -153,8 +154,12 @@ class ASR(_Lazy):
         if m is None:
             raise RuntimeError(f"{self.name} model not available ({self._error})")
         lang = language or self._language(m, audio)
-        kwargs = dict(language=lang, task="transcribe", vad_filter=True, word_timestamps=True, beam_size=5,
-                      condition_on_previous_text=False, temperature=(0.0, 0.2, 0.4),
+        # Fallback re-decoding at higher temperatures made one live chunk take ~50 s when Whisper looped on
+        # Hindi; for live audio use a single pass and stop loops with no-repeat n-grams instead.
+        kwargs = dict(language=lang, task="transcribe", vad_filter=True, word_timestamps=not self.live,
+                      beam_size=3 if self.live else 5, condition_on_previous_text=False,
+                      temperature=0.0 if self.live else (0.0, 0.2, 0.4), no_repeat_ngram_size=3,
+                      repetition_penalty=1.1, compression_ratio_threshold=2.4,
                       vad_parameters={"min_silence_duration_ms": 400, "speech_pad_ms": 200})
         if previous_text:
             kwargs["initial_prompt"] = previous_text[-200:]
@@ -182,6 +187,7 @@ class ASR(_Lazy):
 
 class FinalASR(ASR):
     name = "asr_final"
+    live = False
 
 
 EMO_IGNORE = {"other", "<unk>", "unk", "unknown"}
@@ -219,6 +225,9 @@ class Speaker(_Lazy):
             from speechbrain.inference.speaker import EncoderClassifier
         except ImportError:
             from speechbrain.pretrained import EncoderClassifier
+        import torchaudio
+        if not hasattr(torchaudio, "list_audio_backends"):  # removed in torchaudio 2.9; SpeechBrain 1.0.x still calls it
+            torchaudio.list_audio_backends = lambda: ["soundfile"]
         kw = {}
         try:  # Windows without Developer Mode cannot create symlinks: copy the files instead
             from speechbrain.utils.fetching import LocalStrategy

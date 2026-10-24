@@ -7,6 +7,8 @@ import { authApi, type Me } from "@/lib/api";
 interface Ctx { me: Me | null; ready: boolean; refresh: () => Promise<void>; can: (perm: string) => boolean }
 const SessionCtx = createContext<Ctx>({ me: null, ready: false, refresh: async () => {}, can: () => false });
 export const PUBLIC_PATHS = ["/login", "/setup"];
+/** Open to everyone and never redirected (the public landing page). */
+export const OPEN_PATHS = ["/welcome"];
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
@@ -15,6 +17,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const path = usePathname();
 
   const refresh = useCallback(async () => {
+    if (OPEN_PATHS.some((p) => path.startsWith(p))) { setReady(true); return; }
     try {
       const s = await authApi.state();
       setMe(s.user || null);

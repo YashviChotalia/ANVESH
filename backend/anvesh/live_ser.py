@@ -142,7 +142,7 @@ class LiveEmotionTracker:
 class Chunker:
     """Decides where to cut live audio for transcription: at a pause, using an adaptive noise floor."""
 
-    def __init__(self, target_s: float = 5.0, min_s: float = 1.6, max_s: float = 8.0):
+    def __init__(self, target_s: float = 5.0, min_s: float = 1.6, max_s: float = 6.5):
         self.target, self.min, self.max = target_s, min_s, max_s
         self.floor = deque(maxlen=200)  # recent 100 ms frame energies
 

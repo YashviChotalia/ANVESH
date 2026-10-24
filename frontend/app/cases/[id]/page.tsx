@@ -53,6 +53,11 @@ function Workspace() {
   /** Live updates: compare with the previous state and raise in-call alerts. */
   const onLive = (next: CaseDetail) => {
     const p = prev.current;
+    try { alerts(p, next); } catch (e) { console.error("live alert failed", e); }
+    prev.current = next;
+    setC(next);
+  };
+  const alerts = (p: CaseDetail | null, next: CaseDetail) => {
     if (p) {
       if (next.safety?.crisis && !p.safety?.crisis) { toast({ tone: "crit", title: "Crisis language", body: next.safety.crisis_message || "" }); beep(); }
       if (next.safety?.coercion && !p.safety?.coercion) { toast({ tone: "crit", title: "Possible active coercion", body: next.safety.coercion_message || "" }); beep(); }
@@ -65,9 +70,15 @@ function Workspace() {
       const pd = p.distress?.level, nd = next.distress?.level;
       if (nd === "high" && pd !== "high") toast({ tone: "warn", title: "Caller distress is high", body: "Consider slowing down and reassuring the caller." });
     }
-    prev.current = next;
-    setC(next);
   };
+  // While a live call runs, also re-read the case every 4 s so the transcript can never get stuck
+  const [liveOn, setLiveOn] = useState(false);
+  useEffect(() => {
+    if (!liveOn) return;
+    const t = setInterval(() => { api.get<CaseDetail>(`/api/cases/${id}`).then((x) => onLive(x)).catch(() => {}); }, 4000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveOn, id]);
 
   const run = async (pr: Promise<CaseDetail>) => {
     try { const x = await pr; prev.current = x; setC(x); setErr(null); } catch (e: any) { setErr(e.message); }
@@ -130,7 +141,8 @@ function Workspace() {
         )}
 
         <div className="grid gap-4 xl:min-h-0 xl:flex-1 xl:shrink xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:grid-rows-[minmax(0,1fr)]">
-          <Transcript c={c} focus={focus} onLive={onLive} run={run} autostart={search.get("start")} player={player} onPlaySeg={playAt} />
+          <Transcript c={c} focus={focus} onLive={onLive} run={run} autostart={search.get("start")} player={player} onPlaySeg={playAt}
+            onLiveState={(on) => { setLiveOn(on); if (!on) setTimeout(load, 1500); }} />
           <CaseTabs c={c} run={run} reload={load} onPlay={playAt} />
         </div>
       </div>
@@ -304,10 +316,11 @@ function LiveVoice({ readings, live, distress }: { readings: VoiceReading[]; liv
   );
 }
 
-function Transcript({ c, focus, onLive, run, autostart, player, onPlaySeg }: {
+function Transcript({ c, focus, onLive, run, autostart, player, onPlaySeg, onLiveState }: {
   c: CaseDetail; focus: { seg: string; s: number } | null; onLive: (c: CaseDetail) => void;
   run: (p: Promise<CaseDetail>) => Promise<void>; autostart: string | null;
   player: React.RefObject<PlayerHandle | null>; onPlaySeg: (e: { segment_id: string; t_start: number; t_end: number; char_start: number }) => void;
+  onLiveState?: (on: boolean) => void;
 }) {
   const [playT, setPlayT] = useState<number | null>(null);
   const [native, setNative] = useState(false);
@@ -366,6 +379,7 @@ function Transcript({ c, focus, onLive, run, autostart, player, onPlaySeg }: {
     if (autostart === "live") setTimeout(() => toggleLive(), 300); // started from New intake
   }, [autostart]);
   useEffect(() => () => live?.stop(), [live]);
+  useEffect(() => { onLiveState?.(!!live); }, [live]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (live) endRef.current?.scrollIntoView({ block: "end" }); }, [c.segments.length, live]);
 
   const add = async () => {

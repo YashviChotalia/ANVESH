@@ -163,7 +163,7 @@ def user_count(db: Session) -> int:
 def create_session(db: Session, user: User, response: Response, request: Request) -> str:
     token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
     now = utcnow()
-    db.add(AuthSession(token_hash=keys.token_hash(token), csrf_hash=keys.token_hash(csrf), user_id=user.id,
+    db.add(AuthSession(token_hash=keys.token_hash(token), csrf_hash=keys.encrypt_str(csrf, "auth.csrf"), user_id=user.id,
                        created_at=now, last_seen=now, expires_at=now + timedelta(hours=MAX_HOURS),
                        client=client_key(request)[:64]))
     response.set_cookie(COOKIE, token, httponly=True, samesite="strict", secure=request.url.scheme == "https",
@@ -198,15 +198,27 @@ def principal_from_token(db: Session, token: str | None) -> Principal | None:
                      s.token_hash, u.must_change_password)
 
 
+def _session_csrf(s: AuthSession) -> str | None:
+    """The session's CSRF token (stored encrypted, so every tab of the same session can get it back)."""
+    try:
+        return keys.decrypt_str(s.csrf_hash, "auth.csrf") if s.csrf_hash.startswith(keys.PREFIX) else None
+    except keys.DecryptionError:
+        return None
+
+
 def check_csrf(db: Session, p: Principal, header: str | None) -> bool:
     s = db.get(AuthSession, p.session_hash)
-    return bool(header) and s is not None and hmac.compare_digest(s.csrf_hash, keys.token_hash(header))
+    expected = _session_csrf(s) if s is not None else None
+    return bool(header) and expected is not None and hmac.compare_digest(expected, header)
 
 
 def rotate_csrf(db: Session, p: Principal) -> str:
-    csrf = secrets.token_urlsafe(32)
+    """Return the session's CSRF token; issue one only if the session has none (older sessions)."""
     s = db.get(AuthSession, p.session_hash)
-    s.csrf_hash = keys.token_hash(csrf)
+    csrf = _session_csrf(s)
+    if csrf is None:
+        csrf = secrets.token_urlsafe(32)
+        s.csrf_hash = keys.encrypt_str(csrf, "auth.csrf")
     return csrf
 
 

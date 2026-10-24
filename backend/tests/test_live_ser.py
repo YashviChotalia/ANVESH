@@ -44,7 +44,7 @@ def test_chunker_cuts_at_a_pause_even_with_background_noise():
     speech = (_voice(1, 0.3) * 32767).astype(np.int16).tobytes()
     assert not ch.should_cut(3.0, speech)          # still talking
     assert ch.should_cut(3.0, noise[: SR])         # paused (quiet relative to the room)
-    assert ch.should_cut(8.0, speech)              # never wait longer than the max
+    assert ch.should_cut(6.5, speech)              # never wait longer than the max
     assert not ch.should_cut(1.0, noise[: SR])     # too short to be worth transcribing
 
 

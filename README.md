@@ -7,6 +7,12 @@ UPI-era fraud, and the golden hour after money leaves an account.
 
 > Built for the VecnaVerse National Level Hackathon · PS: *Real-Time Speech Emotion Analysis for
 > Cybercrime Investigation* (Cybersecurity).
+>
+> **Designed and developed by [Yashvi Chotalia](https://github.com/YashviChotalia).**
+
+**Landing page:** `/welcome` is a scroll-driven short film that shows the problem: a "digital arrest" call, a
+voice-changed caller, the account emptied in 47 seconds, then *Introducing Anvesh*. It has graded footage, Hinglish
+subtitles and a soundtrack, and the visuals pulse on the music's beat.
 
 ![Command centre](docs/screenshots/home.png)
 
@@ -42,7 +48,12 @@ UPI-era fraud, and the golden hour after money leaves an account.
    possible-active-coercion alert; crisis language triggers a hand-over prompt (Tele-MANAS 14416).
 6. **Distress track.** emotion2vec voice emotion + pitch/energy/pace change against the caller's own baseline,
    sustained (not single-spike), role-gated, and **abstains** on poor audio or unvalidated languages.
-7. **Tamper-evident audit.** SHA-256 of every recording, encrypted evidence at rest, hash-chained events for every
+7. **Synthetic-voice check.** A deepfake-audio classifier plus acoustic cues (jitter, shimmer, noise floor, rhythm)
+   separate a live human voice from a cloned or replayed one, so a real victim, a real informant and a staged
+   "victim" can be told apart. Shown as *likely real / needs verification / likely synthetic*, never as proof.
+8. **Live call mode.** Microphone audio streams over a WebSocket; transcript, emotion and distress update every few
+   seconds, and a complainant is never shown as "happy".
+9. **Tamper-evident audit.** SHA-256 of every recording, encrypted evidence at rest, hash-chained events for every
    view, AI output and human correction, and a one-click chain verification.
 
 ---
@@ -51,11 +62,11 @@ UPI-era fraud, and the golden hour after money leaves an account.
 
 ```
 Next.js workspace ──► FastAPI (REST + WebSocket live audio)
-                        ├─ speech: faster-whisper ASR · emotion2vec · ECAPA speaker embeddings   (replaceable adapters)
+                        ├─ speech: faster-whisper ASR · emotion2vec · ECAPA speaker embeddings · deepfake-audio check
                         ├─ nlp: Hinglish normaliser → extractor (+evidence) → playbooks/co-pilot → safety signals
                         ├─ triage: transparent rules on reported facts      ├─ distress: role-gated, abstaining
                         ├─ linker: identifiers · script similarity · voice leads → rings
-                        └─ audit + storage: hash chain · Fernet-encrypted evidence
+                        └─ audit + storage: HMAC hash chain · AES-256-GCM encrypted fields and evidence
                      SQLite (dev) / PostgreSQL (compose)
 ```
 
@@ -90,6 +101,9 @@ cp .env.example .env.local
 npm install
 npm run dev                                                # http://localhost:3000
 ```
+
+**Deploy the web app on Vercel:** import the repository, set **Root Directory** to `frontend` (framework: Next.js),
+and set `NEXT_PUBLIC_API_URL` to wherever the FastAPI backend runs. The landing page at `/welcome` needs no backend.
 
 **Everything in containers:** `ANVESH_DATA_KEY=$(python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())") docker compose up --build`
 
@@ -153,3 +167,10 @@ server computer and create the administrator; add officers under **Users**. Pers
 audit log is an HMAC-signed chain with no personal data in it, and every route, role and protection is covered by
 `backend/tests/test_security.py`. See [SECURITY.md](SECURITY.md) for the threat model, controls and known limits.
 **Back up `~/.anvesh/keys/master.key` separately from the data: without it the encrypted cases cannot be read.**
+
+---
+
+## Author
+
+**Yashvi Chotalia** — design, development and research. Footage on the landing page is from Pexels (free licence);
+the people shown are actors. Official statistics are credited in `backend/anvesh/data/official/sources.json`.

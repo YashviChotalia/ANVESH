@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 import re
 import time
@@ -76,6 +77,17 @@ def _safe_filename(name: str | None) -> str:
     return base or "upload"
 
 
+def _finite(o):
+    """Replace NaN/Infinity (invalid JSON for browsers) with None, recursively."""
+    if isinstance(o, float):
+        return o if math.isfinite(o) else None
+    if isinstance(o, dict):
+        return {k: _finite(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_finite(v) for v in o]
+    return o
+
+
 def _can_reveal(p: Principal | None, case: Case) -> bool:
     if case.mode != "informant":
         return True
@@ -144,7 +156,7 @@ def case_detail(db: Session, case: Case, p: Principal | None = None) -> dict:
                    "other": case_summary(others[o], p) if (o := (l.case_b if l.case_a == case.id else l.case_a)) in others else {"id": o}}
                   for l in links],
     })
-    return d
+    return _finite(d)
 
 
 def _get(db: Session, case_id: str) -> Case:
@@ -799,7 +811,7 @@ async def live(ws: WebSocket, case_id: str):
     tracker = live_ser.LiveEmotionTracker(M.emotion.predict if mode != "suspect_recording" else None,
                                           role=pipeline.ROLE.get(mode, "victim"))
     pending_windows: list[dict] = []
-    voice_busy = {"on": False, "next_s": 10.0}
+    voice_busy = {"on": False, "next_s": 20.0}
 
     async def voice_check(pcm: bytes, t_end: float) -> None:
         try:
@@ -817,9 +829,9 @@ async def live(ws: WebSocket, case_id: str):
     async def send(msg: dict) -> None:
         async with send_lock:
             try:
-                await ws.send_json(msg)
+                await ws.send_json(_finite(msg))
             except Exception:
-                pass
+                log.exception("live %s: could not send %s message", case_id, msg.get("type"))
 
     async def asr_worker() -> None:
         while True:
@@ -921,8 +933,9 @@ async def live(ws: WebSocket, case_id: str):
                     t_end = start_offset + len(full) / (A.SR * 2)
                     emo_q.put_nowait((t_end - len(emo_ring) / (A.SR * 2), bytes(emo_ring)))
                 secs = len(full) / (A.SR * 2)
-                if secs >= voice_busy["next_s"] and not voice_busy["on"]:  # synthetic-voice check every ~10 s
-                    voice_busy.update(on=True, next_s=secs + 10.0)
+                # synthetic-voice check every ~20 s, only when transcription is not behind (CPU priority)
+                if secs >= voice_busy["next_s"] and not voice_busy["on"] and asr_q.qsize() == 0:
+                    voice_busy.update(on=True, next_s=secs + 20.0)
                     asyncio.create_task(voice_check(bytes(full[-int(A.SR * 12) * 2:]), start_offset + secs))
                 tail = bytes(buf[-int(A.SR * 0.5) * 2:])
                 if chunker.should_cut(len(buf) / (A.SR * 2), tail):

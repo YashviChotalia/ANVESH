@@ -465,3 +465,12 @@ def test_existing_plaintext_databases_are_encrypted_on_upgrade():
         assert c.caller_label == "Legacy Person" and c.triage == {"headline": "h"}
         e = db.query(Entity).filter(Entity.case_id == c.id).one()
         assert e.value == "legacy@ybl" and e.value_hash == keys.blind_index("upi_id", "legacy@ybl")
+
+
+def test_csrf_token_survives_a_second_tab():
+    """Opening the app in another tab (auth/state) must not break the first tab's CSRF token."""
+    c = make_client(("operator",))
+    first = c.headers["X-CSRF-Token"]
+    other_tab = c.get("/api/auth/state").json()["csrf_token"]
+    assert other_tab == first
+    assert c.post("/api/cases", json={"mode": "victim"}).status_code == 201

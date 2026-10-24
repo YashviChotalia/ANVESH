@@ -211,7 +211,7 @@ class User(Base):
 class AuthSession(Base):
     __tablename__ = "auth_sessions"
     token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)  # HMAC of the cookie token
-    csrf_hash: Mapped[str] = mapped_column(String(64))
+    csrf_hash: Mapped[str] = mapped_column(String(160))  # CSRF token, encrypted (enc1:)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

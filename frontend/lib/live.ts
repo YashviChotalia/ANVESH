@@ -83,7 +83,11 @@ export async function startLive(
   src.connect(node);
   const ws = new WebSocket(wsUrl);
   ws.binaryType = "arraybuffer";
-  ws.onmessage = (ev) => { try { onMessage(JSON.parse(ev.data)); } catch {} };
+  ws.onmessage = (ev) => {
+    let m: any;
+    try { m = JSON.parse(ev.data); } catch (e) { console.error("Live message could not be read", e); return; }
+    try { onMessage(m); } catch (e) { console.error("Live message handler failed", e); }
+  };
   let stopped = false;
   let finished = false;
   ws.onerror = () => onError("Live connection failed. Is the backend running (start.bat)?");
