@@ -11,7 +11,12 @@ function read(): Workspace {
 }
 
 /** Live = real calls taken in this deployment. Training = scripted scenarios, kept fully separate. */
-export function useWorkspace(): [Workspace, (w: Workspace) => void] {
+const CHOSEN = "anvesh.workspace.chosen";
+export function workspaceChosen(): boolean {
+  try { return localStorage.getItem(CHOSEN) === "1"; } catch { return false; }
+}
+
+export function useWorkspace(): [Workspace, (w: Workspace, explicit?: boolean) => void] {
   const [ws, setWs] = useState<Workspace>("live");
   useEffect(() => {
     setWs(read());
@@ -20,8 +25,8 @@ export function useWorkspace(): [Workspace, (w: Workspace) => void] {
     window.addEventListener("storage", on);
     return () => { window.removeEventListener(EVT, on); window.removeEventListener("storage", on); };
   }, []);
-  const set = (w: Workspace) => {
-    try { localStorage.setItem(KEY, w); } catch {}
+  const set = (w: Workspace, explicit = true) => {
+    try { localStorage.setItem(KEY, w); if (explicit) localStorage.setItem(CHOSEN, "1"); } catch {}
     setWs(w);
     window.dispatchEvent(new Event(EVT));
   };

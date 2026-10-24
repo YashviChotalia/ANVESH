@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { api, authApi } from "@/lib/api";
 import { PUBLIC_PATHS, SessionProvider, useSession } from "@/lib/session";
 import type { Health } from "@/lib/types";
-import { useWorkspace } from "@/lib/workspace";
+import { useWorkspace, workspaceChosen } from "@/lib/workspace";
 
 export function Logo({ height = 22 }: { height?: number }) {
   // eslint-disable-next-line @next/next/no-img-element
@@ -43,6 +43,15 @@ function Chrome({ children, can, me }: { children: React.ReactNode; can: (p: str
   const [health, setHealth] = useState<Health | null>(null);
   const [down, setDown] = useState(false);
   const [ws, setWs] = useWorkspace();
+  // Until someone takes a real call, open on the training data so the dashboards are not empty.
+  useEffect(() => {
+    if (!can("case:read") || workspaceChosen()) return;
+    api.get<{ open_cases: number; training_available?: number }>("/api/stats").then((s) => {
+      if (s.open_cases === 0 && (s.training_available ?? 0) > 0) setWs("training", false);
+      else if (s.open_cases > 0) setWs("live", false);
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     let alive = true;
