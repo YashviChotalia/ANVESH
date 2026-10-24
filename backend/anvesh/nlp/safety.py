@@ -44,11 +44,16 @@ class SafetySignals:
 
 
 def _find(text: str, phrases: list[str]) -> list[tuple[str, int, int]]:
+    """Exact match first; otherwise a spelling-tolerant match (quote then spans the whole line)."""
+    from .lexicon import fold
     low = text.lower()
+    folded = fold(text)
     out = []
     for p in phrases:
-        for m in re.finditer(rf"(?<!\w){re.escape(p)}", low):
-            out.append((p, m.start(), m.end()))
+        hits = [(p, m.start(), m.end()) for m in re.finditer(rf"(?<!\w){re.escape(p)}", low)]
+        if not hits and re.search(rf"(?<!\w){re.escape(fold(p))}", folded):
+            hits = [(p, 0, len(text))]
+        out.extend(hits)
     return out
 
 

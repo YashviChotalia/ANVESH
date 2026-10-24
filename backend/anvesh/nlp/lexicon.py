@@ -95,3 +95,11 @@ DAYPART_HOURS = {
     "evening": 18, "raat": 21, "night": 21,
 }
 JUST_NOW = ["abhi abhi", "just now", "abhi thodi der pehle", "thodi der pehle", "abhi kuch der pehle"]
+
+
+def fold(text: str) -> str:
+    """Spelling-tolerant form for phrase matching: 'bataanaa' ~ 'batana', 'kisee' ~ 'kisi'."""
+    import re as _re
+    t = text.lower()
+    t = t.replace("aa", "a").replace("ee", "i").replace("oo", "u").replace("ae", "aye")
+    return _re.sub(r"(.)\1+", r"\1", t)

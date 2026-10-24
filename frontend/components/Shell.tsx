@@ -62,7 +62,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <div className="border-t border-line p-4 text-xs2">
           <div className="mb-2 font-medium text-fg-3">System</div>
           <Status label="API" state={down ? "off" : health ? "on" : "wait"} text={down ? "Unreachable" : health ? "Online" : "…"} />
-          <ModelStatus label="Speech-to-text" m={m("asr")} down={down} />
+          <ModelStatus label="Speech-to-text (live)" m={m("asr")} down={down} />
+          <ModelStatus label="Speech-to-text (accurate)" m={m("asr_final")} down={down} />
           <ModelStatus label="Voice emotion" m={m("voice_emotion")} down={down} />
         </div>
       </aside>

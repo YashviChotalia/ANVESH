@@ -10,7 +10,7 @@ export interface CaseField {
   evidence: Evidence[]; note?: string | null; model_value?: string | null; updated_by?: string | null;
 }
 export interface SegmentT {
-  id: string; start: number; end: number; text: string; speaker?: string | null;
+  id: string; start: number; end: number; text: string; text_native?: string | null; speaker?: string | null;
   language?: string | null; low_confidence: boolean; recording_id?: string | null;
 }
 export interface Triage {
@@ -41,7 +41,7 @@ export interface Recording { id: string; kind: string; filename: string; sha256:
 export interface CaseDetail extends CaseSummary {
   call_started_at: string; segments: SegmentT[]; fields: CaseField[]; triage: Triage; distress: Distress;
   safety: Safety; tactics: { items?: { key: string; label: string; cues: string[] }[]; note?: string };
-  copilot: Prompt[]; recordings: Recording[]; links: LinkT[];
+  copilot: Prompt[]; recordings: Recording[]; links: LinkT[]; processing?: string | null;
 }
 export interface Ring {
   id: string; cases: string[]; size: number; districts: string[]; total_amount: number; shared_identifiers: string[];

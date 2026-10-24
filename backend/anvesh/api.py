@@ -96,7 +96,9 @@ def case_detail(db: Session, case: Case) -> dict:
     d = case_summary(case)
     d.update({
         "call_started_at": case.call_started_at.isoformat() + "Z",
-        "segments": [{"id": s.id, "start": s.start, "end": s.end, "text": s.text, "speaker": s.speaker,
+        "processing": case.processing,
+        "segments": [{"id": s.id, "start": s.start, "end": s.end, "text": s.text, "text_native": s.text_native,
+                      "speaker": s.speaker,
                       "language": s.language, "low_confidence": s.low_confidence, "recording_id": s.recording_id}
                      for s in case.segments],
         "fields": sorted((_field_json(f) for f in case.fields),
@@ -279,12 +281,27 @@ async def upload_recording(case_id: str, file: UploadFile = File(...), kind: str
                                  "Install requirements-ml.txt (see README).")
     offset = max((s.end for s in case.segments), default=0.0)
     x = await asyncio.to_thread(A.decode, data)
-    res = await asyncio.to_thread(pipeline.transcribe_and_analyse, x, case.mode, kind, offset)
-    pipeline.ingest_audio(db, case, data, file.filename or "upload", file.content_type, kind, who, offset,
-                          precomputed=res)
+    model = M.best_asr()
+    res = await asyncio.to_thread(pipeline.transcribe_and_analyse, x, case.mode, kind, offset, True, True, "", model)
+    rec = pipeline.ingest_audio(db, case, data, file.filename or "upload", file.content_type, kind, who, offset,
+                                precomputed=res)
+    refine_later = model is M.asr and M.asr_final.enabled
     db.refresh(case)
     pipeline.process(db, case, who)
+    if refine_later:
+        db.commit()
+        pipeline.refine_async(case.id, rec.id, who)
     return case_detail(db, case)
+
+
+@app.post("/api/recordings/{rec_id}/refine")
+def refine(rec_id: str, db: Session = Depends(db_session), who: str = Depends(actor)):
+    """Re-transcribe a recording with the accurate model (runs in the background)."""
+    rec = db.get(Recording, rec_id)
+    if not rec:
+        raise HTTPException(404, "Recording not found")
+    pipeline.refine_async(rec.case_id, rec.id, who)
+    return {"ok": True}
 
 
 @app.get("/api/recordings/{rec_id}/audio")
@@ -466,7 +483,7 @@ async def live(ws: WebSocket, case_id: str, token: str | None = None, operator: 
                                                          "and will be transcribed as soon as it is ready."})
     buf = bytearray()
     full = bytearray()
-    chunk_bytes = int(settings.live_chunk_seconds * A.SR) * 2
+    chunk_bytes = int(settings.live_chunk_seconds * A.SR) * 2  # target; cut earlier at a pause
     with SessionLocal() as db0:
         c0 = pipeline.get_case(db0, case_id)
         if not c0:
@@ -476,6 +493,8 @@ async def live(ws: WebSocket, case_id: str, token: str | None = None, operator: 
         offset = max((s.end for s in c0.segments), default=0.0)
         mode = c0.mode
     start_offset = offset
+    prev_text: list[str] = []
+    saved_rec: list[str] = []
 
     async def flush(final: bool = False):
         nonlocal offset
@@ -485,7 +504,9 @@ async def live(ws: WebSocket, case_id: str, token: str | None = None, operator: 
         buf.clear()
         # slow model work first, with no database transaction open
         res = ({"segments": [], "language": None, "windows": []} if len(x) < A.SR // 2 else
-               await asyncio.to_thread(pipeline.transcribe_and_analyse, x, mode, "call", offset))
+               await asyncio.to_thread(pipeline.transcribe_and_analyse, x, mode, "call", offset, True, True,
+                                       " ".join(prev_text[-3:])))
+        prev_text.extend(s.get("text_native") or s["text"] for s in res["segments"])
         with SessionLocal() as db:
             case = pipeline.get_case(db, case_id)
             if res["segments"]:
@@ -503,12 +524,17 @@ async def live(ws: WebSocket, case_id: str, token: str | None = None, operator: 
                 for sg in case.segments:  # tie this session's lines to the saved audio for playback
                     if sg.recording_id is None and sg.start >= start_offset - 0.01:
                         sg.recording_id = rec.id
+                saved_rec.append(rec.id)
+                if M.asr_final.enabled:
+                    case.processing = f"Refining transcript with {M.asr_final.model_id}…"
                 db.flush()
                 db.refresh(case)
             db.commit()
             detail = case_detail(db, case)
         offset += len(x) / A.SR
         await ws.send_json({"type": "update", "case": detail, "final": final})
+        if final and saved_rec and M.asr_final.enabled:
+            pipeline.refine_async(case_id, saved_rec[0], who)
 
     try:
         while True:
@@ -518,7 +544,9 @@ async def live(ws: WebSocket, case_id: str, token: str | None = None, operator: 
             if msg.get("bytes"):
                 buf.extend(msg["bytes"])
                 full.extend(msg["bytes"])
-                if len(buf) >= chunk_bytes:
+                # cut at a pause (better words) or at the max chunk length
+                if len(buf) >= chunk_bytes * 2.4 or (len(buf) >= chunk_bytes * 0.6 and
+                                                     A.trailing_silence(bytes(buf[-int(A.SR * 0.7) * 2:]))):
                     await flush()
             elif msg.get("text"):
                 if '"stop"' in msg["text"]:

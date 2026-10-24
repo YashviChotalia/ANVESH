@@ -19,6 +19,7 @@ class Window:
     t_end: float
     emotions: dict[str, float] | None = None  # label -> probability (from the emotion model)
     acoustic: dict[str, float] | None = None  # pitch_std, rms, speech_rate, pause_ratio, snr_db
+    silent: bool = False
 
 
 @dataclass
@@ -85,6 +86,7 @@ def assess(role: str, windows: list[Window], lexical_hits: list[dict], crisis_hi
     if windows and len(low_snr) > len(windows) / 2:
         abstain.append("Audio quality too low for reliable voice analysis.")
 
+    windows = [w for w in windows if not w.silent]  # silence carries no emotion
     acoustic = _acoustic_scores(windows)
     timeline = []
     scores = []
@@ -101,6 +103,8 @@ def assess(role: str, windows: list[Window], lexical_hits: list[dict], crisis_hi
             continue
         scores.append(s)
         top = max(w.emotions.items(), key=lambda kv: kv[1]) if w.emotions else None
+        if top and top[1] < 0.45:
+            top = ("uncertain", top[1])  # no emotion clearly dominant
         timeline.append({"t": round((w.t_start + w.t_end) / 2, 2), "score": round(s, 3),
                          "emotion": round(e, 3) if e is not None else None,
                          "acoustic": round(a, 3) if a is not None else None,

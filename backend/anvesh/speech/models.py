@@ -91,8 +91,32 @@ class _Lazy:
         return ModelStatus(self.name, self.model_id, self._model is not None, self.state, self._error, self.license)
 
 
-HINGLISH_PROMPT = ("Hinglish phone call to cyber police about UPI fraud. Sir mere paise kat gaye, saadhe paanch "
-                   "hazaar, do lakh, PhonePe, Google Pay, SBI, at the rate okaxis, OTP, account number.")
+HOTWORDS = ("UPI PhonePe Paytm GooglePay GPay SBI HDFC ICICI Axis Kotak PNB OTP KYC AnyDesk CBI customs "
+            "lakh hazaar rupaye account number transfer at the rate okaxis ybl")
+
+
+def _clean_segments(segs, offset: float, hotwords: str) -> list[dict]:
+    """Drop typical Whisper hallucinations: text on silence, prompt echoes, looping text."""
+    hw = set(hotwords.lower().split())
+    out = []
+    for s in segs:
+        text = s.text.strip()
+        if not text:
+            continue
+        words = text.lower().replace(",", " ").split()
+        if s.no_speech_prob > 0.6 and s.avg_logprob < -0.7:
+            continue
+        if getattr(s, "compression_ratio", 1.0) > 2.4:
+            continue
+        if len(words) >= 4 and sum(w in hw for w in words) / len(words) > 0.6:
+            continue  # echo of the vocabulary hint
+        out.append({
+            "start": round(s.start + offset, 2), "end": round(s.end + offset, 2), "text": text,
+            "avg_logprob": s.avg_logprob, "no_speech_prob": s.no_speech_prob,
+            "words": [{"word": w.word.strip(), "start": round(w.start + offset, 2), "end": round(w.end + offset, 2),
+                       "p": round(w.probability, 3)} for w in (s.words or [])],
+        })
+    return out
 
 
 class ASR(_Lazy):
@@ -114,30 +138,39 @@ class ASR(_Lazy):
             probs = dict(probs)
             return max(allowed, key=lambda l: probs.get(l, 0.0))
         except Exception:
-            return allowed[0] if allowed else "en"
+            return allowed[0] if allowed else "hi"
 
-    def transcribe(self, audio: np.ndarray, offset: float = 0.0, language: str | None = None) -> tuple[list[dict], str | None]:
+    def transcribe(self, audio: np.ndarray, offset: float = 0.0, language: str | None = None,
+                   previous_text: str = "") -> tuple[list[dict], str | None]:
+        """Returns segments with Roman-script `text` and the original in `text_native`."""
+        from .translit import to_roman
         m = self.get(block=True)
         if m is None:
-            raise RuntimeError(f"ASR model not available ({self._error})")
+            raise RuntimeError(f"{self.name} model not available ({self._error})")
         lang = language or self._language(m, audio)
-        segs, info = m.transcribe(
-            audio, language=lang, task="transcribe", vad_filter=True, word_timestamps=True, beam_size=5,
-            condition_on_previous_text=False, initial_prompt=HINGLISH_PROMPT,
-        )
-        out = []
-        for s in segs:
-            text = s.text.strip()
-            if not text:
-                continue
-            out.append({
-                "start": round(s.start + offset, 2), "end": round(s.end + offset, 2), "text": text,
-                "avg_logprob": s.avg_logprob, "no_speech_prob": s.no_speech_prob,
-                "words": [{"word": w.word.strip(), "start": round(w.start + offset, 2), "end": round(w.end + offset, 2),
-                           "p": round(w.probability, 3)} for w in (s.words or [])],
-            })
-        # report the spoken language for the distress track; English decoding of Hinglish is still "hi"
+        kwargs = dict(language=lang, task="transcribe", vad_filter=True, word_timestamps=True, beam_size=5,
+                      condition_on_previous_text=False, temperature=(0.0, 0.2, 0.4),
+                      vad_parameters={"min_silence_duration_ms": 400, "speech_pad_ms": 200})
+        if previous_text:
+            kwargs["initial_prompt"] = previous_text[-200:]
+        try:  # hotwords bias recognition of domain words without the echo problems of a prompt
+            segs, info = m.transcribe(audio, hotwords=HOTWORDS, **kwargs)
+        except TypeError:  # pragma: no cover - older faster-whisper
+            segs, info = m.transcribe(audio, **kwargs)
+        out = _clean_segments(list(segs), offset, HOTWORDS)
+        prev = previous_text.strip().lower()
+        out = [s for s in out if not prev or s["text"].strip().lower() not in prev]  # prompt echo
+        for s in out:
+            s["text_native"] = s["text"]
+            s["text"] = to_roman(s["text"])
         return out, settings.asr_report_language or getattr(info, "language", lang)
+
+
+class FinalASR(ASR):
+    name = "asr_final"
+
+
+EMO_IGNORE = {"other", "<unk>", "unk", "unknown"}
 
 
 class Emotion(_Lazy):
@@ -156,7 +189,11 @@ class Emotion(_Lazy):
         res = m.generate(audio.astype(np.float32), granularity="utterance", extract_embedding=False, disable_pbar=True)
         r = res[0] if isinstance(res, list) else res
         labels = [str(lbl).split("/")[-1].lower() for lbl in r["labels"]]
-        return {lbl: round(float(s), 4) for lbl, s in zip(labels, r["scores"])}
+        scores = {lbl: float(s) for lbl, s in zip(labels, r["scores"]) if lbl not in EMO_IGNORE}
+        total = sum(scores.values())
+        if total <= 0:
+            return None
+        return {lbl: round(v / total, 4) for lbl, v in scores.items()}  # renormalised over real emotions
 
 
 class Speaker(_Lazy):
@@ -183,15 +220,22 @@ class Speaker(_Lazy):
 
 
 asr = ASR(settings.asr_model, settings.enable_asr)
+asr_final = FinalASR(settings.asr_final_model, settings.enable_asr and settings.enable_asr_final
+                     and settings.asr_final_model != settings.asr_model)
 emotion = Emotion(settings.emotion_model, settings.enable_emotion)
 speaker = Speaker("speechbrain/spkrec-ecapa-voxceleb", settings.enable_speaker)
 
 
 def warmup() -> None:
     """Start loading every enabled model in the background (downloads on first run)."""
-    for m in (asr, emotion, speaker):
+    for m in (asr, emotion, speaker, asr_final):
         m.start_loading()
 
 
+def best_asr() -> ASR:
+    """The accurate model when it is ready, otherwise the live model."""
+    return asr_final if asr_final.state == "ready" else asr
+
+
 def statuses() -> list[dict]:
-    return [s.status().__dict__ for s in (asr, emotion, speaker)]
+    return [s.status().__dict__ for s in (asr, asr_final, emotion, speaker)]

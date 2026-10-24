@@ -121,3 +121,16 @@ def test_safety_scan_skips_officer_lines():
 def test_lexicon_ignores_words_inside_upi_ids():
     f = extract(_segs("cbi.verification at the rate ybl pe 5000 bheje"), NOW)
     assert "claimed_agency" not in f and f["upi_id"].value == "cbi.verification@ybl"
+
+
+def test_devanagari_transliteration_feeds_extraction():
+    from anvesh.speech.translit import to_roman
+    text = to_roman("सर मेरे साढ़े पाँच हज़ार रुपये कट गए आधा घंटा पहले, रमेश एट द रेट ओकेएक्सिस पे भेजे")
+    assert "saadhe paanch hazaar" in text and "pehle" in text
+    f = extract(_segs(text), NOW)
+    assert f["amount_lost"].value == 5500 and f["upi_id"].value == "ramesh@okaxis"
+
+
+def test_spelling_tolerant_safety_phrases():
+    sig = safety.scan(_segs("unhone kaha kisee ko mat bataanaa"))
+    assert sig.coercion_hits

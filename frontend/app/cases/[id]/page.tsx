@@ -38,6 +38,11 @@ function Workspace() {
 
   const load = useCallback(() => api.get<CaseDetail>(`/api/cases/${id}`).then((x) => { prev.current = x; setC(x); }).catch((e) => setErr(e.message)), [id]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!c?.processing) return;
+    const t = setInterval(load, 3000);
+    return () => clearInterval(t);
+  }, [c?.processing, load]);
 
   const toast = (t: { tone: "crit" | "warn" | "accent" | "ok"; title: string; body?: string }) => {
     const tid = Date.now() + Math.random();
@@ -107,6 +112,12 @@ function Workspace() {
         </div>
 
         {err && <ErrorNote msg={err} />}
+        {c.processing && (
+          <div className="flex items-center gap-2 rounded border border-accent-line bg-accent-soft px-3 py-2 text-[13px] text-accent">
+            <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+            {c.processing} The live draft is shown until the refined transcript replaces it.
+          </div>
+        )}
         <SafetyAlert c={c} onJump={playAt} />
         {readback && (
           <div className="flex items-start gap-3 rounded border border-accent-line bg-accent-soft px-3 py-2 text-[13px]">
@@ -171,6 +182,8 @@ function Transcript({ c, focus, onLive, run, autostart, player, onPlaySeg }: {
   player: React.RefObject<PlayerHandle | null>; onPlaySeg: (e: { segment_id: string; t_start: number; t_end: number; char_start: number }) => void;
 }) {
   const [playT, setPlayT] = useState<number | null>(null);
+  const [native, setNative] = useState(false);
+  const hasNative = c.segments.some((s) => s.text_native && s.text_native !== s.text);
   const [replaying, setReplaying] = useState(false);
   const playingSeg = playT === null ? null : c.segments.find((s) => playT >= s.start - 0.05 && playT <= s.end + 0.05)?.id;
   useEffect(() => { if (playingSeg) document.getElementById(`seg-${playingSeg}`)?.scrollIntoView({ block: "nearest" }); }, [playingSeg]);
@@ -234,6 +247,15 @@ function Transcript({ c, focus, onLive, run, autostart, player, onPlaySeg }: {
       <header className="panel-h">
         <h3 className="panel-t">Transcript</h3>
         <div className="flex items-center gap-1.5">
+          {hasNative && (
+            <button onClick={() => setNative((x) => !x)} className="btn-quiet btn-xs" title="Switch between Roman Hinglish and the original script">
+              {native ? "Roman" : "Original script"}
+            </button>
+          )}
+          {!live && c.recordings.length > 0 && !c.processing && (
+            <button onClick={() => api.post(`/api/recordings/${c.recordings.at(-1)!.id}/refine`).then(() => run(api.get(`/api/cases/${c.id}`)))}
+              className="btn-quiet btn-xs" title="Re-transcribe the recording with the accurate model">Re-transcribe</button>
+          )}
           <input ref={fileRef} type="file" accept="audio/*" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
           <button onClick={() => fileRef.current?.click()} disabled={uploading || !!live} className="btn-secondary btn-xs"><Upload size={13} /> {uploading ? "Transcribing…" : "Upload audio"}</button>
           {live && (
@@ -282,7 +304,8 @@ function Transcript({ c, focus, onLive, run, autostart, player, onPlaySeg }: {
               ) : <div className="mono text-[11px] text-fg-4">{ts(s.start)}</div>}
             </div>
             <p className={clsx("leading-[1.6]", s.speaker === "officer" ? "text-fg-3" : "text-fg")}>
-              <Highlighted text={s.text} marks={marks[s.id] || []} focusStart={focus?.seg === s.id ? focus.s : null} />
+              {native && s.text_native ? <span title={s.text}>{s.text_native}</span>
+                : <span title={s.text_native && s.text_native !== s.text ? s.text_native : undefined}><Highlighted text={s.text} marks={marks[s.id] || []} focusStart={focus?.seg === s.id ? focus.s : null} /></span>}
               {s.low_confidence && <span className="ml-1.5 align-middle"><Tag tone="warn">Low ASR confidence</Tag></span>}
             </p>
           </div>
@@ -555,7 +578,7 @@ function Linked({ c, reload }: { c: CaseDetail; reload: () => void }) {
   );
 }
 
-const EMO_TONE: Record<string, string> = { fearful: "text-crit", sad: "text-warn", angry: "text-warn", disgusted: "text-warn", neutral: "text-fg-2", happy: "text-ok", surprised: "text-fg-2" };
+const EMO_TONE: Record<string, string> = { fearful: "text-crit", sad: "text-warn", angry: "text-warn", disgusted: "text-warn", neutral: "text-fg-2", happy: "text-ok", surprised: "text-fg-2", uncertain: "text-fg-3" };
 
 function Distress({ c }: { c: CaseDetail }) {
   const d = c.distress;

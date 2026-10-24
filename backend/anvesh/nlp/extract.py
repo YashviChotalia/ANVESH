@@ -81,7 +81,9 @@ def _window(text: str, s: int, e: int, size: int = 40) -> str:
 
 
 def _has_any(text: str, cues: list[str]) -> bool:
-    return any(re.search(rf"(?<!\w){re.escape(c)}(?!\w)", text) for c in cues)
+    ft = L.fold(text)
+    return any(re.search(rf"(?<!\w){re.escape(c)}(?!\w)", text) or re.search(rf"(?<!\w){re.escape(L.fold(c))}(?!\w)", ft)
+               for c in cues)
 
 
 def _fmt_inr(v: float) -> str:

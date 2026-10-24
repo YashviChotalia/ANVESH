@@ -150,11 +150,14 @@ TACTIC_LABELS = {
 
 
 def _count(text: str, cues: tuple[str, ...]) -> list[str]:
+    from .lexicon import fold
     t = f" {text.lower()} "
+    ft = f" {fold(text)} "
     hits = []
     for c in cues:
-        if re.search(rf"(?<!\w){re.escape(c.strip())}(?!\w)", t):
-            hits.append(c.strip())
+        c = c.strip()
+        if re.search(rf"(?<!\w){re.escape(c)}(?!\w)", t) or re.search(rf"(?<!\w){re.escape(fold(c))}(?!\w)", ft):
+            hits.append(c)
     return hits
 
 

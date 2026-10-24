@@ -46,6 +46,7 @@ class Case(Base):
     asked: Mapped[list] = mapped_column(JSON, default=list)
     windows: Mapped[list] = mapped_column(JSON, default=list)
     intake_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    processing: Mapped[str | None] = mapped_column(String(120), nullable=True)  # background work in progress
 
     segments: Mapped[list["Segment"]] = relationship(back_populates="case", cascade="all, delete-orphan",
                                                      order_by="Segment.start")
@@ -78,6 +79,7 @@ class Segment(Base):
     start: Mapped[float] = mapped_column(Float)
     end: Mapped[float] = mapped_column(Float)
     text: Mapped[str] = mapped_column(Text)
+    text_native: Mapped[str | None] = mapped_column(Text, nullable=True)  # original script from ASR (e.g. Devanagari)
     speaker: Mapped[str | None] = mapped_column(String(24), nullable=True)
     language: Mapped[str | None] = mapped_column(String(16), nullable=True)
     avg_logprob: Mapped[float | None] = mapped_column(Float, nullable=True)

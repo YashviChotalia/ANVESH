@@ -43,7 +43,8 @@ def add_segments(db: Session, case: Case, items: list[dict], recording_id: str |
         lp, nsp = it.get("avg_logprob"), it.get("no_speech_prob")
         low = (lp is not None and lp < -1.0) or (nsp is not None and nsp > 0.6)
         row = Segment(id=new_id("SG"), case_id=case.id, recording_id=recording_id, start=float(it["start"]),
-                      end=float(it["end"]), text=it["text"].strip(), speaker=it.get("speaker"),
+                      end=float(it["end"]), text=it["text"].strip(), text_native=it.get("text_native"),
+                      speaker=it.get("speaker"),
                       language=it.get("language"), avg_logprob=lp, no_speech_prob=nsp, low_confidence=low,
                       words=it.get("words"))
         db.add(row)
@@ -53,18 +54,19 @@ def add_segments(db: Session, case: Case, items: list[dict], recording_id: str |
 
 
 def transcribe_and_analyse(x: np.ndarray, mode: str, kind: str, offset: float = 0.0,
-                           transcribe: bool = True, analyse: bool = True) -> dict:
+                           transcribe: bool = True, analyse: bool = True, previous_text: str = "",
+                           model: "M.ASR | None" = None) -> dict:
     """All slow model work, done WITHOUT holding a database transaction."""
     out: dict = {"segments": [], "language": None, "windows": [], "embedding": None}
     if transcribe:
-        segs, lang = M.asr.transcribe(x, offset=offset)
+        segs, lang = (model or M.asr).transcribe(x, offset=offset, previous_text=previous_text)
         speaker = "suspect" if kind == "suspect_audio" else None
         for s in segs:
             s["language"] = lang
             s["speaker"] = speaker
         out["segments"], out["language"] = segs, lang
     if analyse and mode != "suspect_recording":
-        out["windows"] = compute_windows(x, offset)
+        out["windows"] = compute_windows(x, offset, out["segments"])
     if kind == "suspect_audio":
         out["embedding"] = M.speaker.embed(x)
     return out
@@ -94,17 +96,41 @@ def ingest_audio(db: Session, case: Case, data: bytes, filename: str, mime: str,
     return rec
 
 
-def compute_windows(x: np.ndarray, offset: float = 0.0) -> list[dict]:
-    """Voice windows for the distress track (emotion model if ready + acoustic features)."""
+MIN_VOICED = 0.3     # fraction of frames with speech energy
+MIN_RMS = 0.006      # below this the window is treated as silence
+
+
+def _utterance_spans(x: np.ndarray, offset: float, segs: list[dict]) -> list[tuple[float, float]]:
+    """Emotion models are trained on utterances, so score per spoken line (split if > 8 s)."""
+    spans = []
+    total = len(x) / A.SR
+    for sg in segs:
+        a, b = max(sg["start"] - offset, 0.0), min(sg["end"] - offset, total)
+        while b - a > 8.0:
+            spans.append((a, a + 6.0))
+            a += 6.0
+        if b - a >= 0.8:
+            spans.append((a, b))
+    return spans
+
+
+def compute_windows(x: np.ndarray, offset: float = 0.0, segs: list[dict] | None = None) -> list[dict]:
+    """Voice windows for the distress track: one per utterance when a transcript exists, silence skipped."""
+    spans = _utterance_spans(x, offset, segs) if segs else [(t0, t1) for t0, t1, _ in A.windows(x, 3.0)]
     out = []
-    for t0, t1, chunk in A.windows(x, 3.0):
+    for t0, t1 in spans:
+        chunk = x[int(t0 * A.SR):int(t1 * A.SR)]
+        feats = A.features(chunk)
+        voiced = 1 - feats.get("pause_ratio", 1.0) if feats else 0.0
+        silent = not feats or feats.get("rms", 0.0) < MIN_RMS or voiced < MIN_VOICED
         emo = None
-        try:
-            emo = M.emotion.predict(chunk)
-        except Exception as e:  # pragma: no cover
-            log.warning("emotion inference failed: %s", e)
+        if not silent:
+            try:
+                emo = M.emotion.predict(chunk)
+            except Exception as e:  # pragma: no cover
+                log.warning("emotion inference failed: %s", e)
         out.append({"t_start": round(t0 + offset, 2), "t_end": round(t1 + offset, 2), "emotions": emo,
-                    "acoustic": A.features(chunk)})
+                    "acoustic": feats, "silent": silent})
     return out
 
 
@@ -186,7 +212,7 @@ def process(db: Session, case: Case, actor: str = "system", now: datetime | None
     }
 
     # 5) distress track (role-gated, abstains when unsure)
-    windows = [distress_mod.Window(w["t_start"], w["t_end"], w.get("emotions"), w.get("acoustic"))
+    windows = [distress_mod.Window(w["t_start"], w["t_end"], w.get("emotions"), w.get("acoustic"), w.get("silent", False))
                for w in (case.windows or [])]
     d = distress_mod.assess(role, windows, sig.distress_lexical, sig.crisis_hits, case.language,
                             set(settings.validated_languages))
@@ -240,3 +266,60 @@ def readback(case: Case, lang: str = "hi") -> str:
 
 def get_case(db: Session, case_id: str) -> Case | None:
     return db.execute(select(Case).where(Case.id == case_id)).scalar_one_or_none()
+
+
+# --- accurate second pass ---------------------------------------------------------------------
+
+def refine_recording(case_id: str, rec_id: str, actor: str = "system") -> None:
+    """Re-transcribe a whole recording with the accurate model and rebuild that part of the case.
+
+    Runs in a background thread after a live call ends (and after uploads when the accurate model was
+    not ready yet). The live draft stays visible until the refined version replaces it.
+    """
+    from .models import SessionLocal
+    model = M.asr_final if M.asr_final.enabled else M.asr
+    with SessionLocal() as db:
+        case = get_case(db, case_id)
+        rec = db.get(Recording, rec_id)
+        if not case or not rec:
+            return
+        case.processing = f"Refining transcript with {model.model_id}…"
+        db.commit()
+        data = storage.load(rec.stored_path)
+        offset, kind, mode = rec.offset or 0.0, rec.kind, case.mode
+    try:
+        x = A.decode(data)
+        res = transcribe_and_analyse(x, mode, kind, offset, model=model)
+    except Exception as e:  # pragma: no cover - model failure keeps the live draft
+        log.warning("refine failed: %s", e)
+        with SessionLocal() as db:
+            case = get_case(db, case_id)
+            case.processing = None
+            db.commit()
+        return
+    end = offset + len(x) / A.SR
+    with SessionLocal() as db:
+        case = get_case(db, case_id)
+        old = [s for s in case.segments if s.recording_id == rec_id]
+        labels = {round(s.start): s.speaker for s in old if s.speaker}
+        for s in old:
+            db.delete(s)
+        db.flush()
+        for sg in res["segments"]:
+            sg["speaker"] = sg.get("speaker") or labels.get(round(sg["start"]))
+        add_segments(db, case, res["segments"], rec_id)
+        keep = [w for w in (case.windows or []) if not (offset - 0.01 <= w["t_start"] < end)]
+        case.windows = keep + res["windows"]
+        case.processing = None
+        db.flush()
+        db.refresh(case)
+        audit.record(db, actor, "transcript.refined", case.id,
+                     {"recording_id": rec_id, "model": model.model_id, "segments": len(res["segments"])},
+                     model_version())
+        process(db, case, actor)
+        db.commit()
+
+
+def refine_async(case_id: str, rec_id: str, actor: str = "system") -> None:
+    import threading
+    threading.Thread(target=refine_recording, args=(case_id, rec_id, actor), daemon=True).start()

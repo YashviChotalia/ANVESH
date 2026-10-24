@@ -99,3 +99,11 @@ def windows(x: np.ndarray, size_s: float = 3.0, sr: int = SR) -> list[tuple[floa
         if len(chunk) >= sr:
             out.append((i / sr, (i + len(chunk)) / sr, chunk))
     return out
+
+
+def trailing_silence(pcm16: bytes, threshold: float = 0.012) -> bool:
+    """True when the last part of the buffer is quiet (speaker paused): a good place to cut."""
+    x = pcm16_to_float(pcm16)
+    if len(x) == 0:
+        return False
+    return float(np.sqrt(np.mean(x ** 2))) < threshold

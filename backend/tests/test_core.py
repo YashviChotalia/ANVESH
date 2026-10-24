@@ -61,3 +61,13 @@ def test_distress_uses_sustained_level_not_single_spike():
     w.append(distress.Window(33, 36, {"fearful": 1.0}, None))
     r = distress.assess("victim", w, [], [], language="hi")
     assert r.level in ("low", "elevated") and r.level != "high"
+
+
+def test_silence_windows_are_not_scored():
+    import numpy as np
+    from anvesh import pipeline
+    x = np.zeros(16000 * 4, dtype=np.float32)  # silence
+    w = pipeline.compute_windows(x, 0.0, [{"start": 0.0, "end": 3.0}])
+    assert w and w[0]["silent"] and w[0]["emotions"] is None
+    r = distress.assess("victim", [distress.Window(0, 3, {"disgusted": 0.9}, None, True)], [], [])
+    assert r.timeline == []
