@@ -205,8 +205,14 @@ class Speaker(_Lazy):
             from speechbrain.inference.speaker import EncoderClassifier
         except ImportError:
             from speechbrain.pretrained import EncoderClassifier
+        kw = {}
+        try:  # Windows without Developer Mode cannot create symlinks: copy the files instead
+            from speechbrain.utils.fetching import LocalStrategy
+            kw["local_strategy"] = LocalStrategy.COPY
+        except ImportError:  # older speechbrain
+            pass
         return EncoderClassifier.from_hparams(source=self.model_id,
-                                              savedir=str(settings.data_dir / "models" / "ecapa"))
+                                              savedir=str(settings.data_dir / "models" / "ecapa"), **kw)
 
     def embed(self, audio: np.ndarray) -> list[float] | None:
         m = self.get(block=True)
