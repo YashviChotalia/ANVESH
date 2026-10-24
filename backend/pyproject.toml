@@ -1,0 +1,13 @@
+[project]
+name = "anvesh"
+version = "0.3.0"
+description = "Role-aware cybercrime call intelligence: call -> evidence-linked case file -> fraud rings"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"

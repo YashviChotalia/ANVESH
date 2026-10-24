@@ -1,0 +1,24 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: anvesh
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-anvesh-dev-only}
+      POSTGRES_DB: anvesh
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U anvesh"], interval: 5s, retries: 10 }
+  api:
+    build: { context: ./backend, args: { WITH_ML: "1" } }
+    environment:
+      ANVESH_DB_URL: postgresql+psycopg://anvesh:${POSTGRES_PASSWORD:-anvesh-dev-only}@db:5432/anvesh
+      ANVESH_DATA_KEY: ${ANVESH_DATA_KEY:?set ANVESH_DATA_KEY (python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())")}
+      ANVESH_CORS_ORIGINS: http://localhost:3000
+      ANVESH_ASR_MODEL: ${ANVESH_ASR_MODEL:-small}
+    volumes: [evidence:/data]
+    ports: ["8000:8000"]
+    depends_on: { db: { condition: service_healthy } }
+  web:
+    build: { context: ./frontend, args: { NEXT_PUBLIC_API_URL: http://localhost:8000 } }
+    ports: ["3000:3000"]
+    depends_on: [api]
+volumes: { pgdata: {}, evidence: {} }

@@ -1,0 +1,14 @@
+node_modules/
+.next/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+backend/data/
+data/
+.env
+.env.local
+*.db
+*.db-wal
+*.db-shm
+.dev_data_key

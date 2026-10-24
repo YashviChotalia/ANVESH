@@ -1,0 +1,131 @@
+# Anvesh — every call solves more than one case
+
+**Anvesh** (Sanskrit/Hindi: *search, investigation*) turns a cybercrime victim's phone call into an
+**evidence-linked case file in minutes**, then links it to earlier complaints so one call can
+surface a whole **fraud ring**. It is built for Indian cyber cells and fraud teams: Hinglish speech,
+UPI-era fraud, and the golden hour after money leaves an account.
+
+> Built for the VecnaVerse National Level Hackathon · PS: *Real-Time Speech Emotion Analysis for
+> Cybercrime Investigation* (Cybersecurity).
+
+![Command centre](docs/screenshots/home.png)
+
+| Case workspace | Ring Linker |
+|---|---|
+| ![Case workspace](docs/screenshots/cases_AV-2026-D0001.png) | ![Ring Linker](docs/screenshots/rings.png) |
+
+*Screens show the clearly labelled synthetic demo data from `python -m anvesh.seed`.*
+
+---
+
+## What makes it different
+
+| | Typical SER demo | Anvesh |
+|---|---|---|
+| Output | An emotion label | A case file: amount, time, UPI ID, bank, phone, UTR, scam type, each linked to the exact second of audio |
+| Scope | One call | **Ring Linker** connects cases by identifier, scam script and (for suspect recordings) caller voice |
+| Roles | Everyone treated the same | Operator-confirmed **victim / suspect-recording / informant** modes; emotion scoring is **off for suspects** |
+| Urgency | "Fear 0.81" | Golden-hour triage from **reported facts**; distress is a separate human-safety track |
+| Trust | Black box | Abstains when unsure, shows evidence, hash-chained audit log, officer verify/correct on every field |
+
+### Signature features
+
+1. **Call → case file.** Hinglish normaliser ("saadhe paanch hazaar" → ₹5,500, "ramesh at the rate okaxis" →
+   `ramesh@okaxis`, "nau aath saat…" → `987…`, "aadha ghanta pehle" → a clock time) feeds an extractor that keeps a
+   character-and-time pointer back to the words it came from.
+2. **Ring Linker.** Exact identifier matches, multilingual script similarity, and speaker-embedding voice leads on
+   suspect recordings. Every link is a scored lead that an officer confirms or rejects.
+3. **Interview co-pilot.** Next questions from missing fields plus a scam-type playbook (digital arrest, investment,
+   KYC, courier, sextortion, job, utility).
+4. **Read-back confirmation.** Reads the captured facts back to the caller in Hindi for a yes or a correction.
+5. **Coercion and crisis alerts.** Phrases like "kisi ko mat batana" / "abhi bhi video call pe hain" raise a
+   possible-active-coercion alert; crisis language triggers a hand-over prompt (Tele-MANAS 14416).
+6. **Distress track.** emotion2vec voice emotion + pitch/energy/pace change against the caller's own baseline,
+   sustained (not single-spike), role-gated, and **abstains** on poor audio or unvalidated languages.
+7. **Tamper-evident audit.** SHA-256 of every recording, encrypted evidence at rest, hash-chained events for every
+   view, AI output and human correction, and a one-click chain verification.
+
+---
+
+## Architecture
+
+```
+Next.js workspace ──► FastAPI (REST + WebSocket live audio)
+                        ├─ speech: faster-whisper ASR · emotion2vec · ECAPA speaker embeddings   (replaceable adapters)
+                        ├─ nlp: Hinglish normaliser → extractor (+evidence) → playbooks/co-pilot → safety signals
+                        ├─ triage: transparent rules on reported facts      ├─ distress: role-gated, abstaining
+                        ├─ linker: identifiers · script similarity · voice leads → rings
+                        └─ audit + storage: hash chain · Fernet-encrypted evidence
+                     SQLite (dev) / PostgreSQL (compose)
+```
+
+Modular monolith with clear module boundaries; models load lazily and `/api/health` reports exactly what is loaded.
+A missing model is reported, never simulated.
+
+---
+
+## Quick start (laptop)
+
+**Backend** (Python 3.10–3.12)
+
+```bash
+cd backend
+python -m venv .venv && source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -r requirements-dev.txt
+pip install -r requirements-ml.txt                         # speech models (CPU is fine; downloads on first use)
+python -m anvesh.seed --reset                              # optional: SYNTHETIC demo cases for the Ring Linker
+uvicorn anvesh.api:app --port 8000
+```
+
+**Frontend** (Node 18+)
+
+```bash
+cd frontend
+cp .env.example .env.local
+npm install
+npm run dev                                                # http://localhost:3000
+```
+
+**Everything in containers:** `ANVESH_DATA_KEY=$(python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())") docker compose up --build`
+
+### Configuration
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ANVESH_ASR_MODEL` | `small` | faster-whisper size (`base` for low-RAM laptops, `medium` for accuracy) |
+| `ANVESH_EMOTION_MODEL` | `iic/emotion2vec_plus_base` | voice-emotion checkpoint |
+| `ANVESH_ENABLE_SPEAKER` | `1` | ECAPA speaker embeddings for suspect recordings |
+| `ANVESH_TEXT_EMBEDDER` | *(empty)* | e.g. `paraphrase-multilingual-MiniLM-L12-v2` for cross-language script links |
+| `ANVESH_DATA_KEY` | dev key file | Fernet key for evidence encryption (**set this in any real deployment**) |
+| `ANVESH_API_TOKEN` | *(empty)* | require `Authorization: Bearer …` on every request |
+| `ANVESH_VALIDATED_LANGS` | `en,hi` | languages where the voice distress track is allowed to score |
+
+---
+
+## Quality
+
+```bash
+cd backend && pytest -q            # unit + API tests (no models needed)
+python eval/run_eval.py            # field-extraction evaluation, see EVALUATION.md
+cd ../frontend && npm run typecheck && npm run build
+```
+
+CI runs all of the above on every push.
+
+---
+
+## Responsible use
+
+- Outputs are **indicative signals for human review**, never evidence of honesty, intent or guilt.
+- Emotion and voice-stress scoring are **disabled for suspects** by design; voice-similarity links are leads only.
+- Financial priority comes from reported facts with transparent rules; it does **not** predict recoverability.
+- Hashing shows files and logs were not altered after capture; it does not prove a recording is authentic,
+  complete or lawfully obtained.
+- Demo data shipped with the repo is **synthetic** and labelled as such in the UI.
+- See [`LICENSES.md`](LICENSES.md) before any commercial use of models or datasets.
+
+## Roadmap
+
+Telephony integration for live 1930 calls · NCRP-format export · diarization fallback · fine-tuned
+classifier on commercially licensed data · per-language validation · campaign radar for emerging scam scripts ·
+multi-tenant deployment and DPDP compliance mapping.

@@ -1,0 +1,63 @@
+from datetime import datetime
+
+from anvesh import distress, triage
+from anvesh.nlp.extract import Field
+
+NOW = datetime(2026, 10, 24, 15, 0)
+
+
+def _f(**kw):
+    return {k: Field(k, v, str(v), 0.8) for k, v in kw.items()}
+
+
+def test_recent_loss_is_immediate_and_names_missing_fields():
+    t = triage.assess("victim", _f(amount_lost=48000, incident_time="2026-10-24T14:38"), NOW, False, False, None)
+    assert t.priority == "IMMEDIATE"
+    assert "upi_id" in t.missing and "bank" in t.missing
+    assert "recover" not in t.next_action.lower()  # never claims recoverability
+
+
+def test_old_loss_is_not_immediate():
+    t = triage.assess("victim", _f(amount_lost=5000, incident_time="2026-10-01T10:00"), NOW, False, False, None)
+    assert t.priority == "STANDARD"
+
+
+def test_crisis_escalates_regardless_of_money_while_live():
+    t = triage.assess("victim", {}, NOW, False, True, None, call_age_min=5)
+    assert t.priority == "IMMEDIATE" and t.headline == "Human safety first"
+
+
+def test_emotion_never_drives_financial_priority():
+    a = triage.assess("victim", _f(amount_lost=5000, incident_time="2026-10-01T10:00"), NOW, False, False, None)
+    b = triage.assess("victim", _f(amount_lost=5000, incident_time="2026-10-01T10:00"), NOW, False, False, "high")
+    assert a.priority == b.priority
+
+
+def test_suspect_mode_is_a_lead_not_a_finding():
+    t = triage.assess("suspect_recording", {}, NOW, False, False, None)
+    assert "lead" in t.headline.lower()
+
+
+def test_distress_disabled_for_suspects():
+    r = distress.assess("suspect", [distress.Window(0, 3, {"fearful": 0.9}, None)], [], [])
+    assert r.enabled is False and r.level == "off" and r.score is None
+
+
+def test_distress_abstains_without_audio_but_respects_crisis_words():
+    r = distress.assess("victim", [], [], [{"phrase": "sab khatam"}])
+    assert r.score is None and r.level == "high" and r.abstain_reasons
+
+
+def test_distress_abstains_on_unvalidated_language():
+    w = [distress.Window(i * 3, i * 3 + 3, {"fearful": 0.8}, {"pitch_std": 10, "rms": 0.1, "speech_rate": 3,
+                                                           "pause_ratio": 0.2, "snr_db": 30}) for i in range(5)]
+    r = distress.assess("victim", w, [], [], language="ta")
+    assert r.score is None and any("not validated" in a for a in r.abstain_reasons)
+
+
+def test_distress_uses_sustained_level_not_single_spike():
+    calm = {"neutral": 0.9, "fearful": 0.05}
+    w = [distress.Window(i * 3, i * 3 + 3, calm, None) for i in range(11)]
+    w.append(distress.Window(33, 36, {"fearful": 1.0}, None))
+    r = distress.assess("victim", w, [], [], language="hi")
+    assert r.level in ("low", "elevated") and r.level != "high"

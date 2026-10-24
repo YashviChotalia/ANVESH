@@ -1,0 +1,20 @@
+{"id":"e01","text":"mere saadhe paanch hazaar kat gaye aadha ghanta pehle","expect":{"amount_lost":5500,"incident_minutes_ago":30}}
+{"id":"e02","text":"maine dedh lakh rupaye bheje ramesh at the rate okaxis pe","expect":{"amount_lost":150000,"upi_id":"ramesh@okaxis"}}
+{"id":"e03","text":"unka number tha nau aath saat six five four three two one zero","expect":{"phone_number":"9876543210"}}
+{"id":"e04","text":"do lakh pachaas hazaar transfer kiye HDFC se","expect":{"amount_lost":250000,"bank":"HDFC Bank"}}
+{"id":"e05","text":"Rs 48,000 debit hua SBI account se, UTR 412345678901","expect":{"amount_lost":48000,"bank":"State Bank of India","transaction_id":"412345678901"}}
+{"id":"e06","text":"I sent 1,20,000 to tradepro.desk@okaxis from Kotak","expect":{"amount_lost":120000,"upi_id":"tradepro.desk@okaxis","bank":"Kotak Mahindra Bank"}}
+{"id":"e07","text":"paise ramesh dot kumar at the rate ybl ko gaye, 20 minute pehle","expect":{"upi_id":"ramesh.kumar@ybl","incident_minutes_ago":20}}
+{"id":"e08","text":"woh 50000 rupaye maang rahe the par maine nahi diye","expect":{"amount_lost":null}}
+{"id":"e09","text":"number 98765 43210 se call aaya, 25 hazaar kat gaye","expect":{"phone_number":"9876543210","amount_lost":25000}}
+{"id":"e10","text":"PhonePe se 12,000 rupaye bheje, ek ghanta pehle","expect":{"amount_lost":12000,"payment_app":"PhonePe","incident_minutes_ago":60}}
+{"id":"e11","text":"Google Pay se paanch sau pachaas rupaye gaye abhi abhi","expect":{"amount_lost":550,"payment_app":"Google Pay"}}
+{"id":"e12","text":"bole CBI se hain, customs mein parcel pakda","expect":{"claimed_agency":"CBI, Customs"}}
+{"id":"e13","text":"total chaar lakh pachaas hazaar invest kiye tradepro at the rate okaxis pe","expect":{"amount_lost":450000,"upi_id":"tradepro@okaxis"}}
+{"id":"e14","text":"account number 1234 5678 9012 hai mera, IFSC SBIN0001234","expect":{"account_number":"123456789012","ifsc":"SBIN0001234"}}
+{"id":"e15","text":"sava do lakh rupaye kat gaye do ghante pehle Axis Bank se","expect":{"amount_lost":225000,"bank":"Axis Bank","incident_minutes_ago":120}}
+{"id":"e16","text":"50k gaye Paytm se kal","expect":{"amount_lost":50000,"payment_app":"Paytm"}}
+{"id":"e17","text":"double nine eight seven six five four three two one wale number se call tha","expect":{"phone_number":"9987654321"}}
+{"id":"e18","text":"ek lakh bees hazaar paanch sau rupaye transfer ho gaye","expect":{"amount_lost":120500}}
+{"id":"e19","text":"verification ke liye safe.account.rbi at the rate okaxis pe 2 lakh bheje","expect":{"upi_id":"safe.account.rbi@okaxis","amount_lost":200000}}
+{"id":"e20","text":"teen hazaar rupaye bheje, phir paanch hazaar aur bhej diye","expect":{"amount_lost":8000}}

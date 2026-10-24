@@ -1,0 +1,9 @@
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+sqlalchemy==2.0.36
+pydantic==2.10.3
+python-multipart==0.0.19
+numpy>=1.26,<3
+scikit-learn>=1.4,<2
+cryptography>=43,<46
+psycopg[binary]==3.2.3
