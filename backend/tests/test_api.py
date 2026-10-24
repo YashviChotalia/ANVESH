@@ -1,9 +1,9 @@
-from fastapi.testclient import TestClient
 
-from anvesh.api import app
+from anvesh.api import app  # noqa: F401
+from helpers import ORIGIN, make_client  # noqa: F401
 from anvesh.models import AuditEvent, SessionLocal
 
-client = TestClient(app)
+client = make_client()
 
 
 def _new(mode="victim", **kw):
@@ -82,10 +82,15 @@ def test_audit_chain_detects_tampering():
     assert client.get("/api/audit/verify").json()["ok"] is True
     with SessionLocal() as db:
         ev = db.query(AuditEvent).order_by(AuditEvent.id).first()
+        original = ev.payload
         ev.payload = '{"tampered":true}'
         db.commit()
     v = client.get("/api/audit/verify").json()
     assert v["ok"] is False and v["broken_at"] == ev.id
+    with SessionLocal() as db:  # restore so later tests start from an intact chain
+        db.get(AuditEvent, ev.id).payload = original
+        db.commit()
+    assert client.get("/api/audit/verify").json()["ok"] is True
 
 
 def test_upload_without_asr_fails_clearly():

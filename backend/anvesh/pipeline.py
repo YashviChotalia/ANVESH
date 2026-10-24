@@ -10,7 +10,7 @@ import numpy as np
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from . import audit, distress as distress_mod, linker, storage, triage as triage_mod
+from . import audit, distress as distress_mod, keys, linker, storage, triage as triage_mod
 from .config import settings
 from .models import Case, Entity, FieldRow, Recording, Segment
 from .nlp import playbooks, safety
@@ -180,7 +180,7 @@ def process(db: Session, case: Case, actor: str = "system", now: datetime | None
     # 2) entities for linking (from current values, including corrections)
     db.execute(delete(Entity).where(Entity.case_id == case.id))
     for typ, val in entities(current):
-        db.add(Entity(case_id=case.id, type=typ, value=val))
+        db.add(Entity(case_id=case.id, type=typ, value=val, value_hash=keys.blind_index(typ, val)))
 
     # 3) playbook + co-pilot (victim / informant) or tactics (suspect)
     pb, conf, cues = playbooks.classify(case.narrative)

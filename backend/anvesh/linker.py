@@ -75,7 +75,7 @@ def link_case(db: Session, case: Case) -> int:
     # 1) identifiers
     mine = db.execute(select(Entity).where(Entity.case_id == case.id)).scalars().all()
     for ent in mine:
-        others = db.execute(select(Entity).where(Entity.type == ent.type, Entity.value == ent.value,
+        others = db.execute(select(Entity).where(Entity.type == ent.type, Entity.value_hash == ent.value_hash,
                                                  Entity.case_id != case.id)).scalars().all()
         for o in others:
             if o.case_id not in pool:

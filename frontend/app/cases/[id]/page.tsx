@@ -109,6 +109,7 @@ function Workspace() {
           <span className="text-fg-2">{c.playbook.label}</span>
           {c.language && <span className="uppercase text-fg-3">{c.language}</span>}
           {c.synthetic && <Tag title={c.scenario?.note || "Scripted training call"}>Training scenario</Tag>}
+          {c.identity_protected && <Tag tone="warn" title="Informant identity is visible only to the intake officer and supervisors">Identity protected</Tag>}
         </div>
 
         {err && <ErrorNote msg={err} />}

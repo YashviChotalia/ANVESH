@@ -102,7 +102,11 @@ npm run dev                                                # http://localhost:30
 | `ANVESH_ENABLE_SPEAKER` | `1` | ECAPA speaker embeddings for suspect recordings |
 | `ANVESH_TEXT_EMBEDDER` | *(empty)* | e.g. `paraphrase-multilingual-MiniLM-L12-v2` for cross-language script links |
 | `ANVESH_DATA_KEY` | dev key file | Fernet key for evidence encryption (**set this in any real deployment**) |
-| `ANVESH_API_TOKEN` | *(empty)* | require `Authorization: Bearer …` on every request |
+| `ANVESH_MASTER_KEY` | *(generated in ~/.anvesh/keys)* | 32-byte base64 master key for field and evidence encryption (use a secret manager in production) |
+| `ANVESH_KEY_DIR` | `~/.anvesh/keys` | where the generated master key is kept (outside the data folder) |
+| `ANVESH_SESSION_IDLE_MIN` / `ANVESH_SESSION_MAX_HOURS` | `30` / `12` | session idle timeout and maximum lifetime |
+| `ANVESH_RETENTION_DAYS` | `0` (keep) | erase closed cases older than this on start-up |
+| `ANVESH_MAX_UPLOAD_MB` | `100` | largest audio upload accepted |
 | `ANVESH_VALIDATED_LANGS` | `en,hi` | languages where the voice distress track is allowed to score |
 
 ---
@@ -140,3 +144,12 @@ CI runs all of the above on every push.
 Telephony integration for live 1930 calls · NCRP-format export · diarization fallback · fine-tuned
 classifier on commercially licensed data · per-language validation · campaign radar for emerging scam scripts ·
 multi-tenant deployment and DPDP compliance mapping.
+
+## Security
+
+Anvesh requires named accounts with roles (operator, supervisor, administrator). On first start, open the app on the
+server computer and create the administrator; add officers under **Users**. Personal data is encrypted field by field
+(AES-256-GCM) with a master key kept outside the data folder, identifiers are linked through keyed blind indexes, the
+audit log is an HMAC-signed chain with no personal data in it, and every route, role and protection is covered by
+`backend/tests/test_security.py`. See [SECURITY.md](SECURITY.md) for the threat model, controls and known limits.
+**Back up `~/.anvesh/keys/master.key` separately from the data: without it the encrypted cases cannot be read.**

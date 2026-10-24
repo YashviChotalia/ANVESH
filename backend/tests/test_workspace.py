@@ -1,8 +1,8 @@
-from fastapi.testclient import TestClient
 
-from anvesh.api import app
+from anvesh.api import app  # noqa: F401
+from helpers import ORIGIN, make_client  # noqa: F401
 
-client = TestClient(app)
+client = make_client()
 
 
 def _case(synthetic: bool, upi: str) -> str:

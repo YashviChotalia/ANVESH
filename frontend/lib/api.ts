@@ -1,17 +1,23 @@
 "use client";
 
+/**
+ * API client. Authentication is an HttpOnly session cookie set by the API (JavaScript cannot read it).
+ * State-changing requests carry the CSRF token, which is kept in memory only, never in storage.
+ */
 export const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
-const TOKEN = process.env.NEXT_PUBLIC_API_TOKEN;
 
-export function operator(): string {
-  if (typeof window === "undefined") return "Officer on duty";
-  try { return localStorage.getItem("anvesh.operator") || "Officer on duty"; } catch { return "Officer on duty"; }
+let csrf: string | null = null;
+export function setCsrf(t: string | null) { csrf = t; }
+
+export interface Me {
+  username: string; display_name: string; roles: string[]; permissions: string[]; must_change_password: boolean;
 }
+export interface AuthState { setup_required: boolean; signed_in: boolean; user?: Me; csrf_token?: string }
 
-function headers(json = true): HeadersInit {
-  const h: Record<string, string> = { "X-Operator": operator() };
+function headers(json: boolean, unsafe: boolean): HeadersInit {
+  const h: Record<string, string> = {};
   if (json) h["Content-Type"] = "application/json";
-  if (TOKEN) h["Authorization"] = `Bearer ${TOKEN}`;
+  if (unsafe && csrf) h["X-CSRF-Token"] = csrf;
   return h;
 }
 
@@ -19,36 +25,68 @@ export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
+function onAuthLost() {
+  if (typeof window === "undefined") return;
+  const p = window.location.pathname;
+  if (!p.startsWith("/login") && !p.startsWith("/setup")) {
+    window.location.href = `/login?next=${encodeURIComponent(p + window.location.search)}`;
+  }
+}
+
 async function handle<T>(r: Response): Promise<T> {
   if (!r.ok) {
     let msg = r.statusText;
-    try { const j = await r.json(); msg = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail); } catch {}
+    try { const j = await r.json(); msg = typeof j.detail === "string" ? j.detail : "Request was rejected"; } catch {}
+    if (r.status === 401) onAuthLost();
+    if (r.status === 403 && msg === "Password change required" && typeof window !== "undefined" && !window.location.pathname.startsWith("/account")) {
+      window.location.href = "/account?required=1";
+    }
     throw new ApiError(r.status, msg);
   }
   return r.json() as Promise<T>;
 }
 
+const opts = (method: string, body?: BodyInit, json = true): RequestInit => ({
+  method, body, credentials: "include", cache: "no-store", headers: headers(json && !!body, method !== "GET"),
+});
+
 export const api = {
-  get: <T,>(path: string) => fetch(`${API}${path}`, { headers: headers(false), cache: "no-store" }).then(handle<T>),
+  get: <T,>(path: string) => fetch(`${API}${path}`, opts("GET")).then(handle<T>),
   post: <T,>(path: string, body?: unknown) =>
-    fetch(`${API}${path}`, { method: "POST", headers: headers(), body: body ? JSON.stringify(body) : undefined }).then(handle<T>),
-  patch: <T,>(path: string, body: unknown) =>
-    fetch(`${API}${path}`, { method: "PATCH", headers: headers(), body: JSON.stringify(body) }).then(handle<T>),
+    fetch(`${API}${path}`, opts("POST", body ? JSON.stringify(body) : undefined)).then(handle<T>),
+  patch: <T,>(path: string, body: unknown) => fetch(`${API}${path}`, opts("PATCH", JSON.stringify(body))).then(handle<T>),
   upload: <T,>(path: string, file: File, kind: string) => {
     const fd = new FormData();
     fd.append("file", file);
     fd.append("kind", kind);
-    return fetch(`${API}${path}`, { method: "POST", headers: headers(false), body: fd }).then(handle<T>);
+    return fetch(`${API}${path}`, opts("POST", fd, false)).then(handle<T>);
   },
   audioUrl: async (recId: string) => {
-    const r = await fetch(`${API}/api/recordings/${recId}/audio`, { headers: headers(false) });
-    if (!r.ok) throw new ApiError(r.status, "Could not load evidence audio");
+    const r = await fetch(`${API}/api/recordings/${recId}/audio`, opts("GET"));
+    if (!r.ok) throw new ApiError(r.status, r.status === 403 ? "You are not allowed to open this recording" : "Could not load evidence audio");
     return URL.createObjectURL(await r.blob());
   },
-  wsUrl: (caseId: string) => {
-    const base = API.replace(/^http/, "ws");
-    const q = new URLSearchParams({ operator: operator() });
-    if (TOKEN) q.set("token", TOKEN);
-    return `${base}/ws/cases/${caseId}/live?${q}`;
+  /** The session cookie is sent with the WebSocket handshake; nothing secret goes in the URL. */
+  wsUrl: (caseId: string) => `${API.replace(/^http/, "ws")}/ws/cases/${encodeURIComponent(caseId)}/live`,
+};
+
+export const authApi = {
+  state: async (): Promise<AuthState> => {
+    const s = await fetch(`${API}/api/auth/state`, opts("GET")).then(handle<AuthState>);
+    setCsrf(s.csrf_token || null);
+    return s;
+  },
+  login: async (username: string, password: string) => {
+    const r = await fetch(`${API}/api/auth/login`, opts("POST", JSON.stringify({ username, password }))).then(handle<{ user: Me; csrf_token: string }>);
+    setCsrf(r.csrf_token);
+    return r;
+  },
+  setup: async (body: { username: string; display_name: string; password: string }) => {
+    const r = await fetch(`${API}/api/auth/setup`, opts("POST", JSON.stringify(body))).then(handle<{ user: Me; csrf_token: string }>);
+    setCsrf(r.csrf_token);
+    return r;
+  },
+  logout: async () => {
+    try { await api.post("/api/auth/logout"); } finally { setCsrf(null); }
   },
 };

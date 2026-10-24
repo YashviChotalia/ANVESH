@@ -1,11 +1,12 @@
 "use client";
 
 import clsx from "clsx";
-import { BarChart3, FilePlus2, Inbox, ScrollText, Share2 } from "lucide-react";
+import { BarChart3, FilePlus2, Inbox, LogOut, ScrollText, Share2, UserCog, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, authApi } from "@/lib/api";
+import { PUBLIC_PATHS, SessionProvider, useSession } from "@/lib/session";
 import type { Health } from "@/lib/types";
 import { useWorkspace } from "@/lib/workspace";
 
@@ -15,14 +16,29 @@ export function Logo({ height = 22 }: { height?: number }) {
 }
 
 const NAV = [
-  { href: "/", label: "Case queue", icon: Inbox, match: (p: string) => p === "/" || p.startsWith("/cases") },
-  { href: "/intake", label: "New intake", icon: FilePlus2, match: (p: string) => p.startsWith("/intake") },
-  { href: "/rings", label: "Linked cases", icon: Share2, match: (p: string) => p.startsWith("/rings") },
-  { href: "/insights", label: "National data", icon: BarChart3, match: (p: string) => p.startsWith("/insights") },
-  { href: "/audit", label: "Audit log", icon: ScrollText, match: (p: string) => p.startsWith("/audit") },
+  { href: "/", label: "Case queue", icon: Inbox, perm: "case:read", match: (p: string) => p === "/" || p.startsWith("/cases") },
+  { href: "/intake", label: "New intake", icon: FilePlus2, perm: "case:write", match: (p: string) => p.startsWith("/intake") },
+  { href: "/rings", label: "Linked cases", icon: Share2, perm: "case:read", match: (p: string) => p.startsWith("/rings") },
+  { href: "/insights", label: "National data", icon: BarChart3, perm: "", match: (p: string) => p.startsWith("/insights") },
+  { href: "/admin/users", label: "Users", icon: Users, perm: "user:admin", match: (p: string) => p.startsWith("/admin") },
+  { href: "/audit", label: "Audit log", perm: "audit:read", icon: ScrollText, match: (p: string) => p.startsWith("/audit") },
 ];
 
 export function Shell({ children }: { children: React.ReactNode }) {
+  return <SessionProvider><Frame>{children}</Frame></SessionProvider>;
+}
+
+const ROLE_LABEL: Record<string, string> = { operator: "Operator", supervisor: "Supervisor", admin: "Administrator" };
+
+function Frame({ children }: { children: React.ReactNode }) {
+  const path = usePathname();
+  const { me, ready, can } = useSession();
+  if (PUBLIC_PATHS.some((p) => path.startsWith(p))) return <>{children}</>;
+  if (!ready || !me) return <div className="min-h-screen bg-bg" />;
+  return <Chrome can={can} me={me}>{children}</Chrome>;
+}
+
+function Chrome({ children, can, me }: { children: React.ReactNode; can: (p: string) => boolean; me: NonNullable<ReturnType<typeof useSession>["me"]> }) {
   const path = usePathname();
   const [health, setHealth] = useState<Health | null>(null);
   const [down, setDown] = useState(false);
@@ -47,7 +63,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <Logo height={21} />
         </Link>
         <nav className="flex-1 space-y-0.5 p-2">
-          {NAV.map(({ href, label, icon: Icon, match }) => (
+          {NAV.filter((n) => !n.perm || can(n.perm)).map(({ href, label, icon: Icon, match }) => (
             <Link key={href} href={href}
               className={clsx("relative flex h-8 items-center gap-2.5 rounded px-2.5 text-[13px] font-medium",
                 match(path) ? "bg-brand-soft text-fg" : "text-fg-2 hover:bg-bg hover:text-fg")}>
@@ -57,7 +73,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
         </nav>
-        <div className="px-4 pb-3">
+        {can("case:read") && <div className="px-4 pb-3">
           <div className="mb-1.5 text-xs2 font-medium text-fg-3">Workspace</div>
           <div className="grid grid-cols-2 rounded border border-line2 p-0.5 text-xs2 font-medium">
             {(["live", "training"] as const).map((w) => (
@@ -67,6 +83,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
               </button>
             ))}
           </div>
+        </div>}
+        <div className="flex items-center gap-2 border-t border-line px-4 py-3">
+          <Link href="/account" className="min-w-0 flex-1 rounded hover:bg-bg" title="Account and password">
+            <div className="truncate text-[13px] font-medium text-fg">{me.display_name}</div>
+            <div className="truncate text-xs2 text-fg-3">{me.roles.map((r) => ROLE_LABEL[r] || r).join(" · ")}</div>
+          </Link>
+          <Link href="/account" className="btn-quiet btn-xs px-1.5" aria-label="Account"><UserCog size={15} /></Link>
+          <button onClick={async () => { await authApi.logout(); window.location.href = "/login"; }}
+            className="btn-quiet btn-xs px-1.5" aria-label="Sign out" title="Sign out"><LogOut size={15} /></button>
         </div>
         <div className="border-t border-line p-4 text-xs2">
           <div className="mb-2 font-medium text-fg-3">System</div>

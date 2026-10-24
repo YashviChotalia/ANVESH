@@ -16,11 +16,11 @@ def _bool(name: str, default: bool) -> bool:
 class Settings:
     data_dir: Path = field(default_factory=lambda: Path(os.getenv("ANVESH_DATA_DIR", "./data")).resolve())
     db_url: str = os.getenv("ANVESH_DB_URL", "")
-    data_key: str | None = os.getenv("ANVESH_DATA_KEY")
-    api_token: str | None = os.getenv("ANVESH_API_TOKEN")  # if set, required as Bearer token
-    operator: str = os.getenv("ANVESH_OPERATOR", "Officer on duty")
+    data_key: str | None = os.getenv("ANVESH_DATA_KEY")  # legacy evidence key (read-only, for re-encryption)
+    # exact frontend origins allowed to call the API with credentials (also checked on WebSocket handshakes)
     cors_origins: tuple[str, ...] = tuple(
-        o.strip() for o in os.getenv("ANVESH_CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip())
+        o.strip() for o in os.getenv("ANVESH_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+        if o.strip() and o.strip() != "*")
 
     # Speech models (all optional; the API reports what is loaded at /api/health)
     asr_model: str = os.getenv("ANVESH_ASR_MODEL", "small")

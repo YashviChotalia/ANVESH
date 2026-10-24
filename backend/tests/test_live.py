@@ -1,9 +1,9 @@
 """Live WebSocket path with stand-in model adapters (real models are not downloaded in CI)."""
 
 import numpy as np
-from fastapi.testclient import TestClient
 
-from anvesh.api import app
+from anvesh.api import app  # noqa: F401
+from helpers import ORIGIN, make_client  # noqa: F401
 from anvesh.speech import models as M
 
 
@@ -27,12 +27,12 @@ def test_live_session_transcribes_scores_voice_and_saves_evidence(monkeypatch):
     monkeypatch.setattr(M, "asr", FakeASR())
     monkeypatch.setattr(M.asr_final, "enabled", False)
     monkeypatch.setattr(M.emotion, "predict", lambda chunk: {"fearful": 0.7, "neutral": 0.3})
-    client = TestClient(app)
+    client = make_client()
     case = client.post("/api/cases", json={"mode": "victim"}).json()
     sr = 16000
     t = np.arange(sr * 6) / sr
     tone = (0.3 * np.sin(2 * np.pi * (150 + 40 * np.sin(t)) * t) * 32767).astype(np.int16).tobytes()
-    with client.websocket_connect(f"/ws/cases/{case['id']}/live") as ws:
+    with client.websocket_connect(f"/ws/cases/{case['id']}/live", headers={"origin": ORIGIN}) as ws:
         for i in range(0, len(tone), 8000):
             ws.send_bytes(tone[i:i + 8000])
         ws.send_bytes(b"\x00\x00" * 16000)  # a 1 s pause: the server cuts the chunk here

@@ -31,7 +31,7 @@ export interface CaseSummary {
   id: string; created_at: string; mode: Mode; channel: string; status: string; caller_label: string;
   district?: string | null; priority: Priority; priority_score: number; synthetic: boolean;
   playbook: { key: string | null; label: string; confidence: number }; amount: number;
-  headline?: string; coercion: boolean; crisis: boolean; language?: string | null; intake_seconds?: number | null;
+  headline?: string; identity_protected?: boolean; coercion: boolean; crisis: boolean; language?: string | null; intake_seconds?: number | null;
 }
 export interface LinkT {
   id: number; kind: "identifier" | "script" | "voice"; score: number; status: "candidate" | "confirmed" | "rejected";
