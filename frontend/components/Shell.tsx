@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { Health } from "@/lib/types";
+import { useWorkspace } from "@/lib/workspace";
 
 export function Logo({ height = 22 }: { height?: number }) {
   // eslint-disable-next-line @next/next/no-img-element
@@ -25,6 +26,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const [health, setHealth] = useState<Health | null>(null);
   const [down, setDown] = useState(false);
+  const [ws, setWs] = useWorkspace();
 
   useEffect(() => {
     let alive = true;
@@ -55,6 +57,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
         </nav>
+        <div className="px-4 pb-3">
+          <div className="mb-1.5 text-xs2 font-medium text-fg-3">Workspace</div>
+          <div className="grid grid-cols-2 rounded border border-line2 p-0.5 text-xs2 font-medium">
+            {(["live", "training"] as const).map((w) => (
+              <button key={w} onClick={() => setWs(w)}
+                className={clsx("rounded-[4px] py-1", ws === w ? (w === "live" ? "bg-brand text-white" : "bg-warn-soft text-warn") : "text-fg-3 hover:text-fg")}>
+                {w === "live" ? "Live cases" : "Training"}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="border-t border-line p-4 text-xs2">
           <div className="mb-2 font-medium text-fg-3">System</div>
           <Status label="API" state={down ? "off" : health ? "on" : "wait"} text={down ? "Unreachable" : health ? "Online" : "…"} />

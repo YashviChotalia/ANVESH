@@ -70,12 +70,16 @@ def _upsert(db: Session, a: str, b: str, kind: str, score: float, detail: dict) 
 def link_case(db: Session, case: Case) -> int:
     """(Re)compute links from `case` to every other case. Returns links found."""
     found = 0
+    # Training scenarios and real cases never link to each other.
+    pool = set(db.execute(select(Case.id).where(Case.synthetic.is_(bool(case.synthetic)))).scalars())
     # 1) identifiers
     mine = db.execute(select(Entity).where(Entity.case_id == case.id)).scalars().all()
     for ent in mine:
         others = db.execute(select(Entity).where(Entity.type == ent.type, Entity.value == ent.value,
                                                  Entity.case_id != case.id)).scalars().all()
         for o in others:
+            if o.case_id not in pool:
+                continue
             _upsert(db, case.id, o.case_id, "identifier", 1.0,
                     {"type": ent.type, "value": ent.value,
                      "reason": f"Same {ENTITY_LABELS.get(ent.type, ent.type)}: {ent.value}"})
@@ -84,7 +88,7 @@ def link_case(db: Session, case: Case) -> int:
     # 2) scam script
     if case.narrative and len(case.narrative) > 40:
         rows = db.execute(select(Case.id, Case.narrative).where(Case.id != case.id)).all()
-        rows = [r for r in rows if r.narrative and len(r.narrative) > 40]
+        rows = [r for r in rows if r.narrative and len(r.narrative) > 40 and r.id in pool]
         sims = script_similarity(case.narrative, [r.narrative for r in rows])
         for r, s in zip(rows, sims):
             if s >= SCRIPT_THRESHOLD:
@@ -102,6 +106,8 @@ def link_case(db: Session, case: Case) -> int:
         for r in my_recs:
             a = np.array(r.speaker_embedding)
             for o in others:
+                if o.case_id not in pool:
+                    continue
                 s = float(a @ np.array(o.speaker_embedding))
                 if s >= VOICE_THRESHOLD:
                     _upsert(db, case.id, o.case_id, "voice", s,
@@ -125,9 +131,11 @@ def _amount(db: Session, case_id: str) -> float:
         return 0.0
 
 
-def rings(db: Session, min_score: float = 0.0) -> list[dict]:
-    """Connected components over non-rejected links."""
-    links = db.execute(select(Link).where(Link.status != "rejected", Link.score >= min_score)).scalars().all()
+def rings(db: Session, min_score: float = 0.0, training: bool = False) -> list[dict]:
+    """Connected components over non-rejected links, within one workspace (real cases or training)."""
+    pool = set(db.execute(select(Case.id).where(Case.synthetic.is_(training))).scalars())
+    links = [l for l in db.execute(select(Link).where(Link.status != "rejected", Link.score >= min_score)).scalars()
+             if l.case_a in pool and l.case_b in pool]
     adj: dict[str, set[str]] = defaultdict(set)
     for l in links:
         adj[l.case_a].add(l.case_b)

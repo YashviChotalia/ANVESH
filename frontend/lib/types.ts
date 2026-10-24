@@ -82,6 +82,7 @@ export interface Ring {
 export interface Stats {
   open_cases: number; immediate: number; safety_alerts: number; rings: number; linked_cases: number;
   reported_loss: number; median_intake_seconds: number | null; last_24h: number;
+  workspace?: "live" | "training"; training_available?: number;
 }
 export interface AuditEventT { id: number; ts: string; actor: string; action: string; case_id: string | null; payload: string; hash: string; prev_hash: string; model_version?: string | null }
 export interface Health { ok: boolean; version: string; models: { name: string; model: string; loaded: boolean; state?: string; error?: string | null; license?: string | null }[]; validated_languages: string[] }

@@ -192,10 +192,10 @@ def official_context(district: str, who: str = Depends(actor)):
 
 
 @app.get("/api/stats")
-def stats(db: Session = Depends(db_session), who: str = Depends(actor)):
-    cases = db.execute(select(Case)).scalars().all()
+def stats(training: bool = False, db: Session = Depends(db_session), who: str = Depends(actor)):
+    cases = db.execute(select(Case).where(Case.synthetic.is_(training))).scalars().all()
     open_ = [c for c in cases if c.status != "closed"]
-    rings = linker.rings(db)
+    rings = linker.rings(db, training=training)
     timed = [c.intake_seconds for c in cases if c.intake_seconds]
     since = utcnow() - timedelta(hours=24)
     return {
@@ -206,13 +206,15 @@ def stats(db: Session = Depends(db_session), who: str = Depends(actor)):
         "reported_loss": sum(_amount(c) for c in open_),
         "median_intake_seconds": float(np.median(timed)) if timed else None,
         "last_24h": sum(1 for c in cases if c.created_at >= since),
+        "workspace": "training" if training else "live",
+        "training_available": db.execute(select(func.count(Case.id)).where(Case.synthetic.is_(True))).scalar() or 0,
     }
 
 
 @app.get("/api/cases")
-def list_cases(status: str | None = None, priority: str | None = None, db: Session = Depends(db_session),
-               who: str = Depends(actor)):
-    q = select(Case)
+def list_cases(status: str | None = None, priority: str | None = None, training: bool = False,
+               db: Session = Depends(db_session), who: str = Depends(actor)):
+    q = select(Case).where(Case.synthetic.is_(training))
     if status:
         q = q.where(Case.status == status)
     if priority:
@@ -415,14 +417,16 @@ def report(case_id: str, db: Session = Depends(db_session), who: str = Depends(a
 
 
 @app.get("/api/graph")
-def graph(db: Session = Depends(db_session), who: str = Depends(actor)):
-    links = db.execute(select(Link).where(Link.status != "rejected")).scalars().all()
+def graph(training: bool = False, db: Session = Depends(db_session), who: str = Depends(actor)):
+    pool = set(db.execute(select(Case.id).where(Case.synthetic.is_(training))).scalars())
+    links = [l for l in db.execute(select(Link).where(Link.status != "rejected")).scalars()
+             if l.case_a in pool and l.case_b in pool]
     ids = {l.case_a for l in links} | {l.case_b for l in links}
     cases = db.execute(select(Case).where(Case.id.in_(ids))).scalars().all() if ids else []
     return {"nodes": [case_summary(c) for c in cases],
             "edges": [{"id": l.id, "source": l.case_a, "target": l.case_b, "kind": l.kind, "score": l.score,
                        "status": l.status, "reason": l.detail.get("reason")} for l in links],
-            "rings": linker.rings(db)}
+            "rings": linker.rings(db, training=training)}
 
 
 @app.patch("/api/links/{link_id}")
@@ -452,11 +456,11 @@ def audit_verify(db: Session = Depends(db_session), who: str = Depends(actor)):
 
 
 @app.get("/api/radar")
-def radar(days: int = 7, db: Session = Depends(db_session), who: str = Depends(actor)):
+def radar(days: int = 7, training: bool = False, db: Session = Depends(db_session), who: str = Depends(actor)):
     """Campaign radar: which scam types are rising, where. Counts complaints, not verified crimes."""
     now = utcnow()
     since = now - timedelta(days=days)
-    cases = [c for c in db.execute(select(Case).where(Case.created_at >= since)).scalars() if c.mode != "suspect_recording"]
+    cases = [c for c in db.execute(select(Case).where(Case.created_at >= since, Case.synthetic.is_(training))).scalars() if c.mode != "suspect_recording"]
     out = []
     for key in {c.playbook_key or "other" for c in cases}:
         group = [c for c in cases if (c.playbook_key or "other") == key]

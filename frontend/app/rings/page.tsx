@@ -8,6 +8,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { TopBar } from "@/components/Shell";
 import { Empty, Tag } from "@/components/ui";
 import { api } from "@/lib/api";
+import { useWorkspace, wsParam } from "@/lib/workspace";
 import { inr, inrShort, MODE_LABEL } from "@/lib/format";
 import type { CaseSummary, Ring } from "@/lib/types";
 
@@ -35,7 +36,8 @@ function Rings() {
   const [pairs, setPairs] = useState<Map<string, Edge[]>>(new Map());
   const W = 880, H = 540;
 
-  useEffect(() => { api.get<{ nodes: CaseSummary[]; edges: Edge[]; rings: Ring[] }>("/api/graph").then(setData); }, []);
+  const [ws] = useWorkspace();
+  useEffect(() => { api.get<{ nodes: CaseSummary[]; edges: Edge[]; rings: Ring[] }>(`/api/graph${wsParam(ws)}`).then(setData); }, [ws]);
 
   useEffect(() => {
     if (!data) return;

@@ -10,6 +10,7 @@ import { Empty, ErrorNote, n, PriorityLabel, Tag } from "@/components/ui";
 import { api } from "@/lib/api";
 import { ago, inr, inrShort, MODE_LABEL } from "@/lib/format";
 import type { CaseSummary, OfficialSummary, Ring, Stats } from "@/lib/types";
+import { useWorkspace, wsParam } from "@/lib/workspace";
 
 type Filter = "all" | "IMMEDIATE" | "safety" | "linked";
 interface RadarGroup { key: string; label: string; last_24h: number; last_period: number; rising: boolean; districts: string[]; reported_loss: number }
@@ -23,14 +24,15 @@ export default function Queue() {
   const [official, setOfficial] = useState<OfficialSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [ws, setWs] = useWorkspace();
 
   useEffect(() => {
     let alive = true;
     const load = async () => {
       try {
         const [c, s, g, rd] = await Promise.all([
-          api.get<CaseSummary[]>("/api/cases"), api.get<Stats>("/api/stats"), api.get<{ rings: Ring[] }>("/api/graph"),
-          api.get<{ groups: RadarGroup[] }>("/api/radar?days=7"),
+          api.get<CaseSummary[]>(`/api/cases${wsParam(ws)}`), api.get<Stats>(`/api/stats${wsParam(ws)}`),
+          api.get<{ rings: Ring[] }>(`/api/graph${wsParam(ws)}`), api.get<{ groups: RadarGroup[] }>(`/api/radar?days=7${wsParam(ws, "&")}`),
         ]);
         if (!alive) return;
         setCases(c); setStats(s); setRings(g.rings.filter((r) => r.size >= 2)); setRadar(rd.groups); setErr(null);
@@ -40,7 +42,7 @@ export default function Queue() {
     api.get<OfficialSummary>("/api/official").then((o) => alive && setOfficial(o)).catch(() => {});
     const t = setInterval(load, 8000);
     return () => { alive = false; clearInterval(t); };
-  }, []);
+  }, [ws]);
 
   const ringOf = (id: string) => rings.find((r) => r.cases.includes(id));
   const open = (cases || []).filter((c) => c.status !== "closed");
@@ -59,16 +61,16 @@ export default function Queue() {
       <div className="space-y-5 p-6">
         {err && <ErrorNote msg={err} />}
         {official && <NationalStrip o={official} />}
-        {open.some((c) => c.synthetic) && (
-          <div className="rounded border border-line bg-surface px-4 py-2 text-xs2 text-fg-2">
-            Calls marked <span className="font-medium text-fg">Training call</span> are scripted scenarios: governments do not publish victim calls.
-            Each one reproduces a scam type from official Chakshu data in a district covered by NCRB statistics; numbers and UPI handles are placeholders.
+        {ws === "training" && (
+          <div className="rounded border border-warn-line bg-warn-soft px-4 py-2 text-xs2 text-warn">
+            <span className="font-semibold">Training workspace.</span> Scripted scenarios for practice and demos, not real complaints.
+            They never mix with live cases or their links. Scam types and places come from official Chakshu and NCRB data; numbers and UPI handles are placeholders.
           </div>
         )}
 
         <div className="panel grid grid-cols-2 divide-x divide-line md:grid-cols-5">
           <Metric label="Open cases" value={stats?.open_cases} />
-          <Metric label="Immediate review" value={stats?.immediate} tone="crit" />
+          <Metric label="Immediate review" value={stats?.immediate} tone={stats?.immediate ? "crit" : undefined} />
           <Metric label="Safety alerts" value={stats?.safety_alerts} tone={stats?.safety_alerts ? "crit" : undefined} />
           <Metric label="Linked groups" value={stats?.rings} sub={stats ? `${stats.linked_cases} cases` : undefined} />
           <Metric label="Reported loss (open)" value={stats ? inrShort(stats.reported_loss) : undefined} sub="As reported by callers" />
@@ -87,6 +89,17 @@ export default function Queue() {
             </div>
             {cases === null ? (
               <div className="space-y-px p-3">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-10 animate-pulse rounded bg-bg" />)}</div>
+            ) : open.length === 0 && ws === "live" ? (
+              <div className="px-6 py-12 text-center">
+                <div className="text-[15px] font-semibold text-fg">No live cases yet</div>
+                <p className="mx-auto mt-1 max-w-[520px] text-[13px] text-fg-2">
+                  This queue only shows real calls taken here. Start an intake to take a call, or open the training workspace to practise on scripted scenarios.
+                </p>
+                <div className="mt-4 flex justify-center gap-2">
+                  <Link href="/intake" className="btn-primary"><Plus size={14} /> New intake</Link>
+                  {(stats?.training_available ?? 0) > 0 && <button onClick={() => setWs("training")} className="btn-secondary">Open training workspace</button>}
+                </div>
+              </div>
             ) : shown.length === 0 ? (
               <Empty title="No cases in this view" />
             ) : (
