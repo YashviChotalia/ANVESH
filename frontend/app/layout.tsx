@@ -3,7 +3,7 @@ import "./globals.css";
 import { Shell } from "@/components/Shell";
 
 export const metadata: Metadata = {
-  title: "Anvesh · Cybercrime call intelligence",
+  title: "Anvesh",
   description: "Turns cybercrime calls into evidence-linked case files and links them into fraud rings.",
   icons: { icon: "/favicon.svg" },
 };

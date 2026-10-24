@@ -1,25 +1,33 @@
 "use client";
 
 import clsx from "clsx";
-import { ArrowRight, Check, FileAudio, Mic, PhoneIncoming, ShieldQuestion, Upload, UserRoundSearch, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { PageHeader } from "@/components/Shell";
+import { TopBar } from "@/components/Shell";
 import { ErrorNote } from "@/components/ui";
 import { api } from "@/lib/api";
 import type { CaseDetail, Mode } from "@/lib/types";
 
-const MODES: { key: Mode; title: string; icon: React.ReactNode; channel: string; runs: string[]; never: string[] }[] = [
-  { key: "victim", title: "Victim report", icon: <PhoneIncoming size={20} />, channel: "helpline",
-    runs: ["Financial detail extraction with evidence", "Golden-hour triage", "Interview co-pilot", "Distress + coercion assist"],
-    never: ["Scam-cue scoring of the victim's own words"] },
-  { key: "suspect_recording", title: "Suspected scam recording", icon: <ShieldQuestion size={20} />, channel: "upload",
-    runs: ["Scam-tactic tagging", "Identifier extraction", "Ring Linker incl. caller-voice leads"],
-    never: ["Emotion or voice-stress scoring of the suspect", "Any judgement of guilt"] },
-  { key: "informant", title: "Informant tip", icon: <UserRoundSearch size={20} />, channel: "informant_line",
-    runs: ["Lead extraction", "Ring Linker", "Safety and confidentiality prompts"],
-    never: ["Emotion as a sign of credibility"] },
+const MODES: { key: Mode; title: string; desc: string; channel: string; runs: string; off: string }[] = [
+  { key: "victim", title: "Victim report", channel: "helpline",
+    desc: "A complainant reporting a financial cyber fraud.",
+    runs: "Detail extraction, triage, interview prompts, read-back, distress and coercion alerts",
+    off: "Scam-tactic scoring of the caller's own words" },
+  { key: "suspect_recording", title: "Suspected scam recording", channel: "upload",
+    desc: "Audio of the suspected fraudster, shared by a victim.",
+    runs: "Scam-tactic tagging, identifier extraction, case linking including voice leads",
+    off: "Emotion and voice-stress analysis of the suspect" },
+  { key: "informant", title: "Informant tip", channel: "informant_line",
+    desc: "Information about fraud activity from a third party.",
+    runs: "Lead extraction, case linking, confidentiality prompts",
+    off: "Using emotion as a measure of credibility" },
 ];
+
+const SOURCES = [
+  { key: "live", label: "Live microphone" },
+  { key: "upload", label: "Audio file" },
+  { key: "text", label: "Typed transcript" },
+] as const;
 
 export default function Intake() {
   const router = useRouter();
@@ -35,70 +43,67 @@ export default function Intake() {
     setBusy(true); setErr(null);
     try {
       const c = await api.post<CaseDetail>("/api/cases", {
-        mode, channel: m.channel, caller_label: caller.trim() || (mode === "suspect_recording" ? "Recording shared by victim" : "Unnamed caller"),
-        district: district.trim() || null,
+        mode, channel: m.channel, district: district.trim() || null,
+        caller_label: caller.trim() || (mode === "suspect_recording" ? "Recording shared by complainant" : "Unnamed caller"),
       });
       router.push(`/cases/${c.id}?start=${start}`);
     } catch (e: any) { setErr(e.message); setBusy(false); }
   };
 
   return (
-    <div className="pb-16">
-      <PageHeader eyebrow="New intake" title="Who is on the line?"
-        sub="The operator confirms the mode. It decides which analysis runs, and which is switched off by policy." />
-      <div className="grid gap-6 px-8 xl:grid-cols-[1fr_400px]">
-        <div className="grid gap-4 md:grid-cols-3">
-          {MODES.map((x) => (
-            <button key={x.key} onClick={() => { setMode(x.key); setStart(x.key === "suspect_recording" ? "upload" : "live"); }}
-              className={clsx("card relative flex flex-col p-5 text-left transition hover:shadow-lift",
-                mode === x.key ? "ring-2 ring-ink-900" : "hover:-translate-y-0.5")}>
-              <span className={clsx("grid h-10 w-10 place-items-center rounded-xl", mode === x.key ? "bg-brand text-white" : "bg-canvas text-ink-800")}>{x.icon}</span>
-              <span className="mt-4 font-display text-[17px] font-semibold">{x.title}</span>
-              <span className="mt-3 eyebrow">Runs</span>
-              <ul className="mt-1.5 space-y-1.5">
-                {x.runs.map((r) => <li key={r} className="flex gap-2 text-[12.5px] text-ink-800"><Check size={14} className="mt-0.5 shrink-0 text-signal-ok" />{r}</li>)}
-              </ul>
-              <span className="mt-4 eyebrow">Never runs</span>
-              <ul className="mt-1.5 space-y-1.5">
-                {x.never.map((r) => <li key={r} className="flex gap-2 text-[12.5px] text-ink-400"><X size={14} className="mt-0.5 shrink-0 text-signal-crit" />{r}</li>)}
-              </ul>
-              {mode === x.key && <span className="absolute right-4 top-4 grid h-6 w-6 place-items-center rounded-full bg-ink-900 text-white"><Check size={14} /></span>}
-            </button>
-          ))}
-        </div>
+    <>
+      <TopBar title="New intake" crumbs={[{ href: "/", label: "Case queue" }]} />
+      <div className="mx-auto max-w-3xl space-y-5 p-6">
+        <section className="panel">
+          <header className="panel-h"><h3 className="panel-t">1. Call type</h3><span className="text-xs2 text-fg-3">Confirmed by the operator</span></header>
+          <div className="divide-y divide-line">
+            {MODES.map((x) => (
+              <label key={x.key} className={clsx("flex cursor-pointer gap-3 px-4 py-3", mode === x.key ? "bg-accent-soft/40" : "hover:bg-bg")}>
+                <input type="radio" name="mode" className="mt-1 accent-[#1849A9]" checked={mode === x.key}
+                  onChange={() => { setMode(x.key); setStart(x.key === "suspect_recording" ? "upload" : "live"); }} />
+                <div className="min-w-0">
+                  <div className="font-medium text-fg">{x.title}</div>
+                  <div className="text-fg-2">{x.desc}</div>
+                  <div className="mt-1.5 grid gap-x-6 gap-y-0.5 text-xs2 sm:grid-cols-[64px_1fr]">
+                    <span className="text-fg-3">Runs</span><span className="text-fg-2">{x.runs}</span>
+                    <span className="text-fg-3">Disabled</span><span className="text-fg-2">{x.off}</span>
+                  </div>
+                </div>
+              </label>
+            ))}
+          </div>
+        </section>
 
-        <div className="card p-6">
-          <h2 className="font-display text-[17px] font-semibold">{m.title}</h2>
-          <div className="mt-5 space-y-4">
+        <section className="panel">
+          <header className="panel-h"><h3 className="panel-t">2. Details</h3></header>
+          <div className="grid gap-4 p-4 sm:grid-cols-2">
             <label className="block">
-              <span className="text-[12.5px] font-semibold text-ink-800">{mode === "suspect_recording" ? "Source" : "Caller reference"}</span>
-              <input className="input mt-1.5" value={caller} onChange={(e) => setCaller(e.target.value)}
-                placeholder={mode === "suspect_recording" ? "e.g. Recording shared by complainant" : "Name or reference (optional)"} />
+              <span className="label">{mode === "suspect_recording" ? "Source" : "Caller reference"}</span>
+              <input className="input mt-1" value={caller} onChange={(e) => setCaller(e.target.value)}
+                placeholder={mode === "suspect_recording" ? "Recording shared by complainant" : "Name or reference number"} />
             </label>
             <label className="block">
-              <span className="text-[12.5px] font-semibold text-ink-800">District</span>
-              <input className="input mt-1.5" value={district} onChange={(e) => setDistrict(e.target.value)} placeholder="e.g. Pune" />
+              <span className="label">District</span>
+              <input className="input mt-1" value={district} onChange={(e) => setDistrict(e.target.value)} placeholder="e.g. Pune" />
             </label>
-            <div>
-              <span className="text-[12.5px] font-semibold text-ink-800">Start with</span>
-              <div className="mt-1.5 grid grid-cols-3 gap-2">
-                {([["live", "Live mic", <Mic key="m" size={16} />], ["upload", "Recording", <Upload key="u" size={16} />], ["text", "Transcript", <FileAudio key="t" size={16} />]] as const).map(([k, l, i]) => (
-                  <button key={k} onClick={() => setStart(k)}
-                    className={clsx("flex flex-col items-center gap-1.5 rounded-xl border px-2 py-3 text-[12px] font-semibold transition",
-                      start === k ? "border-ink-900 bg-ink-900 text-white" : "border-line bg-white text-ink-800 hover:bg-canvas")}>{i}{l}</button>
+            <div className="sm:col-span-2">
+              <span className="label block">Input</span>
+              <div className="mt-1 inline-flex rounded border border-line2 p-0.5">
+                {SOURCES.map((s) => (
+                  <button key={s.key} onClick={() => setStart(s.key)}
+                    className={clsx("h-7 rounded-[4px] px-3 text-[13px] font-medium", start === s.key ? "bg-fg text-white" : "text-fg-2 hover:text-fg")}>{s.label}</button>
                 ))}
               </div>
             </div>
-            {err && <ErrorNote msg={err} />}
-            <button onClick={go} disabled={busy} className="btn-primary w-full py-3 text-[14px]">
-              {busy ? "Opening case…" : <>Open case file <ArrowRight size={16} /></>}
-            </button>
-            <p className="text-[11.5px] leading-relaxed text-ink-400">
-              Opening a case starts the intake timer and writes a tamper-evident audit event. Recordings are hashed (SHA-256) and encrypted at rest.
-            </p>
           </div>
+        </section>
+
+        {err && <ErrorNote msg={err} />}
+        <div className="flex items-center justify-between">
+          <p className="max-w-md text-xs2 text-fg-3">Creating the case starts the intake timer and records an audit entry. Uploaded audio is hashed (SHA-256) and stored encrypted.</p>
+          <button onClick={go} disabled={busy} className="btn-primary">{busy ? "Creating…" : "Create case"}</button>
         </div>
       </div>
-    </div>
+    </>
   );
 }

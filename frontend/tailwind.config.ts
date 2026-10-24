@@ -5,29 +5,22 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["'Inter Variable'", "Inter", "system-ui", "sans-serif"],
-        display: ["'Space Grotesk'", "'Inter Variable'", "system-ui", "sans-serif"],
-        mono: ["'JetBrains Mono'", "ui-monospace", "monospace"],
+        sans: ["'Inter Variable'", "Inter", "Segoe UI", "system-ui", "sans-serif"],
+        mono: ["'JetBrains Mono'", "Consolas", "ui-monospace", "monospace"],
       },
+      fontSize: { xs2: ["11px", "16px"], sm2: ["13px", "20px"] },
       colors: {
-        ink: { DEFAULT: "#0A0F1C", 900: "#0A0F1C", 800: "#111827", 700: "#1C2436", 600: "#2A3448", 400: "#7A859B" },
-        canvas: "#F4F5F8",
-        line: "#E3E6EC",
-        brand: { DEFAULT: "#F26B1D", 50: "#FEF3EC", 100: "#FDE3D2", 600: "#D9560B", 700: "#B4460A" },
-        signal: {
-          crit: "#D92D20", critbg: "#FEF3F2", high: "#DC6803", highbg: "#FFFAEB",
-          ok: "#079455", okbg: "#ECFDF3", info: "#3E4BDB", infobg: "#EEF1FF",
-        },
+        bg: "#F6F7F9",
+        surface: "#FFFFFF",
+        line: "#E4E7EC",
+        line2: "#D0D5DD",
+        fg: { DEFAULT: "#101828", 2: "#475467", 3: "#667085", 4: "#98A2B3" },
+        accent: { DEFAULT: "#1849A9", soft: "#EFF4FF", line: "#B2CCFF" },
+        crit: { DEFAULT: "#B42318", soft: "#FEF3F2", line: "#FECDCA" },
+        warn: { DEFAULT: "#B54708", soft: "#FFFAEB", line: "#FEDF89" },
+        ok: { DEFAULT: "#067647", soft: "#ECFDF3", line: "#ABEFC6" },
       },
-      boxShadow: {
-        card: "0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06)",
-        lift: "0 8px 24px -8px rgba(16,24,40,.18)",
-      },
-      keyframes: {
-        pulsering: { "0%": { boxShadow: "0 0 0 0 rgba(217,45,32,.45)" }, "100%": { boxShadow: "0 0 0 10px rgba(217,45,32,0)" } },
-        fadein: { from: { opacity: "0", transform: "translateY(4px)" }, to: { opacity: "1", transform: "none" } },
-      },
-      animation: { pulsering: "pulsering 1.6s ease-out infinite", fadein: "fadein .35s ease-out both" },
+      borderRadius: { DEFAULT: "6px", md: "8px" },
     },
   },
   plugins: [],

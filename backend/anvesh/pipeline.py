@@ -163,7 +163,7 @@ def process(db: Session, case: Case, actor: str = "system", now: datetime | None
     case.safety = {
         "coercion": coercion, "crisis": crisis,
         "coercion_hits": sig.coercion_hits, "crisis_hits": sig.crisis_hits,
-        "coercion_message": ("Victim may be under active coercion. Tell them to end the scammer's call now: "
+        "coercion_message": ("The caller may still be under the scammer's control. Ask them to end that call now; "
                              "police do not arrest anyone over a video call.") if coercion else None,
         "crisis_message": safety.CRISIS_RESOURCE if crisis else None,
         "playbook_advice": pb.advice,

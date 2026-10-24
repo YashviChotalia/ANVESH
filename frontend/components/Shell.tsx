@@ -1,30 +1,28 @@
 "use client";
 
 import clsx from "clsx";
-import { Activity, FileAudio2, LayoutGrid, Network, ShieldCheck } from "lucide-react";
+import { FilePlus2, Inbox, ScrollText, Share2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { Health } from "@/lib/types";
 
-export function Logo({ size = 28 }: { size?: number }) {
+export function Logo() {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
-      <rect width="32" height="32" rx="9" fill="#F26B1D" />
-      <circle cx="14" cy="14" r="7.2" fill="none" stroke="#0A0F1C" strokeWidth="2.6" />
-      <path d="M19.4 19.4 25 25" stroke="#0A0F1C" strokeWidth="2.8" strokeLinecap="round" />
-      <path d="M9.8 14h1.6l1.1-2.6 1.9 5.2 1.4-3.6.8 1h1.6" fill="none" stroke="#0A0F1C" strokeWidth="1.5"
-        strokeLinecap="round" strokeLinejoin="round" />
+    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden>
+      <rect width="24" height="24" rx="5" fill="#101828" />
+      <circle cx="10.5" cy="10.5" r="5" fill="none" stroke="#fff" strokeWidth="2" />
+      <path d="M14.3 14.3 18.5 18.5" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
     </svg>
   );
 }
 
 const NAV = [
-  { href: "/", label: "Command", icon: LayoutGrid },
-  { href: "/intake", label: "New intake", icon: FileAudio2 },
-  { href: "/rings", label: "Ring Linker", icon: Network },
-  { href: "/audit", label: "Audit trail", icon: ShieldCheck },
+  { href: "/", label: "Case queue", icon: Inbox, match: (p: string) => p === "/" || p.startsWith("/cases") },
+  { href: "/intake", label: "New intake", icon: FilePlus2, match: (p: string) => p.startsWith("/intake") },
+  { href: "/rings", label: "Linked cases", icon: Share2, match: (p: string) => p.startsWith("/rings") },
+  { href: "/audit", label: "Audit log", icon: ScrollText, match: (p: string) => p.startsWith("/audit") },
 ];
 
 export function Shell({ children }: { children: React.ReactNode }) {
@@ -41,50 +39,37 @@ export function Shell({ children }: { children: React.ReactNode }) {
     return () => { alive = false; clearInterval(t); };
   }, []);
 
-  const asr = health?.models.find((m) => m.name === "asr");
-  const emo = health?.models.find((m) => m.name === "voice_emotion");
+  const models = health?.models || [];
+  const m = (n: string) => models.find((x) => x.name === n);
 
   return (
     <div className="flex min-h-screen">
-      <aside className="sticky top-0 hidden h-screen w-[232px] shrink-0 flex-col bg-ink-900 px-4 py-5 text-white lg:flex">
-        <Link href="/" className="flex items-center gap-2.5 px-2">
+      <aside className="sticky top-0 hidden h-screen w-[216px] shrink-0 flex-col border-r border-line bg-surface lg:flex">
+        <Link href="/" className="flex h-14 items-center gap-2.5 border-b border-line px-4">
           <Logo />
-          <div className="leading-none">
-            <div className="font-display text-[19px] font-bold tracking-tight">ANVESH</div>
-            <div className="mt-1 text-[10px] font-medium uppercase tracking-[0.18em] text-white/40">Call intelligence</div>
-          </div>
+          <span className="text-[15px] font-semibold tracking-[-0.01em]">Anvesh</span>
         </Link>
-        <nav className="mt-9 space-y-1">
-          {NAV.map(({ href, label, icon: Icon }) => {
-            const active = href === "/" ? path === "/" || path.startsWith("/cases") : path.startsWith(href);
-            return (
-              <Link key={href} href={href}
-                className={clsx("group flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13.5px] font-medium transition",
-                  active ? "bg-white/10 text-white" : "text-white/60 hover:bg-white/5 hover:text-white")}>
-                <Icon size={17} className={clsx(active ? "text-brand" : "text-white/40 group-hover:text-white/70")} />
-                {label}
-              </Link>
-            );
-          })}
+        <nav className="flex-1 space-y-0.5 p-2">
+          {NAV.map(({ href, label, icon: Icon, match }) => (
+            <Link key={href} href={href}
+              className={clsx("flex h-8 items-center gap-2.5 rounded px-2.5 text-[13px] font-medium",
+                match(path) ? "bg-bg text-fg" : "text-fg-2 hover:bg-bg hover:text-fg")}>
+              <Icon size={15} strokeWidth={1.8} className={match(path) ? "text-fg" : "text-fg-3"} />
+              {label}
+            </Link>
+          ))}
         </nav>
-        <div className="mt-auto space-y-3">
-          <div className="rounded-xl bg-white/5 p-3.5 ring-1 ring-white/10">
-            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-white/50">
-              <Activity size={13} /> Pipeline
-            </div>
-            <ModelRow label="Speech-to-text" on={!!asr?.loaded} known={!!health} down={down} />
-            <ModelRow label="Voice emotion" on={!!emo?.loaded} known={!!health} down={down} />
-            <p className="mt-2 text-[10.5px] leading-snug text-white/35">Models load on first use. Missing models are reported, never simulated.</p>
-          </div>
-          <p className="px-2 text-[10.5px] leading-snug text-white/30">
-            Decision support only. Anvesh never determines guilt, honesty or credibility.
-          </p>
+        <div className="border-t border-line p-4 text-xs2">
+          <div className="mb-2 font-medium text-fg-3">System</div>
+          <Status label="API" state={down ? "off" : health ? "on" : "wait"} text={down ? "Unreachable" : health ? "Online" : "…"} />
+          <Status label="Speech-to-text" state={down ? "off" : m("asr")?.loaded ? "on" : "idle"} text={m("asr")?.loaded ? "Loaded" : "Loads on use"} />
+          <Status label="Voice emotion" state={down ? "off" : m("voice_emotion")?.loaded ? "on" : "idle"} text={m("voice_emotion")?.loaded ? "Loaded" : "Loads on use"} />
         </div>
       </aside>
       <main className="min-w-0 flex-1">
         {down && (
-          <div className="bg-signal-crit px-6 py-2 text-center text-[12.5px] font-medium text-white">
-            Backend not reachable at the configured API URL. Start it with <span className="mono">uvicorn anvesh.api:app</span>.
+          <div className="border-b border-crit-line bg-crit-soft px-6 py-2 text-[13px] text-crit">
+            Cannot reach the Anvesh API. Start the backend (start.bat) and reload.
           </div>
         )}
         {children}
@@ -93,28 +78,30 @@ export function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ModelRow({ label, on, known, down }: { label: string; on: boolean; known: boolean; down: boolean }) {
-  const state = down ? "offline" : !known ? "…" : on ? "loaded" : "on demand";
+function Status({ label, state, text }: { label: string; state: "on" | "off" | "idle" | "wait"; text: string }) {
   return (
-    <div className="mt-2 flex items-center justify-between text-[12px]">
-      <span className="text-white/70">{label}</span>
-      <span className={clsx("flex items-center gap-1.5", on ? "text-emerald-400" : down ? "text-red-400" : "text-white/40")}>
-        <span className={clsx("h-1.5 w-1.5 rounded-full", on ? "bg-emerald-400" : down ? "bg-red-400" : "bg-white/30")} />
-        {state}
+    <div className="flex items-center justify-between py-0.5">
+      <span className="text-fg-2">{label}</span>
+      <span className="flex items-center gap-1.5 text-fg-3">
+        <span className={clsx("h-1.5 w-1.5 rounded-full", { on: "bg-ok", off: "bg-crit", idle: "bg-fg-4", wait: "bg-fg-4" }[state])} />
+        {text}
       </span>
     </div>
   );
 }
 
-export function PageHeader({ eyebrow, title, sub, right }: { eyebrow?: string; title: string; sub?: string; right?: React.ReactNode }) {
+export function TopBar({ title, crumbs, right }: { title: React.ReactNode; crumbs?: { href: string; label: string }[]; right?: React.ReactNode }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-4 px-8 pb-6 pt-8">
-      <div>
-        {eyebrow && <div className="eyebrow">{eyebrow}</div>}
-        <h1 className="h-display mt-1 text-[30px] leading-tight">{title}</h1>
-        {sub && <p className="mt-1.5 max-w-2xl text-[14px] text-ink-400">{sub}</p>}
+    <div className="sticky top-0 z-20 flex h-14 items-center justify-between gap-4 border-b border-line bg-surface/95 px-6 backdrop-blur">
+      <div className="flex min-w-0 items-center gap-2 text-[13px]">
+        {crumbs?.map((c) => (
+          <span key={c.href} className="flex items-center gap-2 text-fg-3">
+            <Link href={c.href} className="hover:text-fg">{c.label}</Link><span>/</span>
+          </span>
+        ))}
+        <h1 className="truncate text-[15px] font-semibold text-fg">{title}</h1>
       </div>
-      {right}
+      <div className="flex shrink-0 items-center gap-2">{right}</div>
     </div>
   );
 }

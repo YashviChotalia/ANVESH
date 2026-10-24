@@ -13,3 +13,5 @@ data/
 *.db-shm
 .dev_data_key
 logs/
+.venv/
+venv/

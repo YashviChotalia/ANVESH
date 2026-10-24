@@ -1,7 +1,4 @@
 @import "@fontsource-variable/inter";
-@import "@fontsource/space-grotesk/500.css";
-@import "@fontsource/space-grotesk/600.css";
-@import "@fontsource/space-grotesk/700.css";
 @import "@fontsource/jetbrains-mono/400.css";
 @import "@fontsource/jetbrains-mono/600.css";
 
@@ -10,32 +7,28 @@
 @tailwind utilities;
 
 @layer base {
-  html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
-  body { @apply bg-canvas text-ink-900 font-sans text-[14px] leading-relaxed; }
-  ::selection { @apply bg-brand-100; }
-  :focus-visible { @apply outline-none ring-2 ring-brand ring-offset-2 ring-offset-canvas; }
+  html { -webkit-font-smoothing: antialiased; font-feature-settings: "cv11", "ss01", "tnum"; }
+  body { @apply bg-bg text-fg font-sans text-sm2; }
+  :focus-visible { @apply outline-none ring-2 ring-accent/40 ring-offset-1; }
+  h1, h2, h3 { @apply font-semibold tracking-[-0.01em]; }
 }
 
 @layer components {
-  .card { @apply rounded-2xl border border-line bg-white shadow-card; }
-  .card-pad { @apply p-5; }
-  .eyebrow { @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-400; }
-  .h-display { @apply font-display font-bold tracking-tight text-ink-900; }
-  .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-semibold transition
+  .panel { @apply rounded-md border border-line bg-surface; }
+  .panel-h { @apply flex items-center justify-between gap-3 border-b border-line px-4 py-2.5; }
+  .panel-t { @apply text-[13px] font-semibold text-fg; }
+  .label { @apply text-xs2 font-medium text-fg-3; }
+  .btn { @apply inline-flex h-8 items-center justify-center gap-1.5 rounded border px-3 text-[13px] font-medium transition-colors
     disabled:cursor-not-allowed disabled:opacity-50; }
-  .btn-primary { @apply btn bg-ink-900 text-white hover:bg-ink-700 active:translate-y-px; }
-  .btn-brand { @apply btn bg-brand text-white hover:bg-brand-600 active:translate-y-px; }
-  .btn-ghost { @apply btn border border-line bg-white text-ink-800 hover:border-ink-400/40 hover:bg-canvas; }
-  .btn-sm { @apply px-3 py-1.5 text-[12px] rounded-lg; }
-  .chip { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold; }
-  .input { @apply w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-[14px] placeholder:text-ink-400/70
-    focus:border-ink-900 focus:outline-none focus:ring-0; }
+  .btn-primary { @apply btn border-fg bg-fg text-white hover:bg-[#1D2939]; }
+  .btn-secondary { @apply btn border-line2 bg-surface text-fg hover:bg-bg; }
+  .btn-quiet { @apply btn border-transparent bg-transparent text-fg-2 hover:bg-bg hover:text-fg; }
+  .btn-xs { @apply h-7 px-2 text-xs2; }
+  .input { @apply h-8 w-full rounded border border-line2 bg-surface px-2.5 text-[13px] placeholder:text-fg-4
+    focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15; }
+  .tag { @apply inline-flex items-center gap-1 rounded border px-1.5 py-px text-xs2 font-medium; }
   .mono { @apply font-mono text-[12px]; }
-  .scroll-thin { scrollbar-width: thin; scrollbar-color: #cfd4dc transparent; }
-}
-
-.grain {
-  background-image:
-    radial-gradient(1200px 400px at 10% -10%, rgba(242,107,29,.16), transparent 60%),
-    radial-gradient(900px 400px at 100% 0%, rgba(62,75,219,.18), transparent 60%);
+  .th { @apply border-b border-line px-3 py-2 text-left text-xs2 font-medium text-fg-3; }
+  .td { @apply border-b border-line px-3 py-2.5 align-middle; }
+  .scroll-thin { scrollbar-width: thin; scrollbar-color: #D0D5DD transparent; }
 }
