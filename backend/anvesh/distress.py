@@ -100,9 +100,11 @@ def assess(role: str, windows: list[Window], lexical_hits: list[dict], crisis_hi
         if s is None:
             continue
         scores.append(s)
+        top = max(w.emotions.items(), key=lambda kv: kv[1]) if w.emotions else None
         timeline.append({"t": round((w.t_start + w.t_end) / 2, 2), "score": round(s, 3),
                          "emotion": round(e, 3) if e is not None else None,
-                         "acoustic": round(a, 3) if a is not None else None})
+                         "acoustic": round(a, 3) if a is not None else None,
+                         "label": top[0] if top else None, "p": round(top[1], 3) if top else None})
 
     reasons = []
     lex_boost = min(0.05 * len(lexical_hits), 0.2)

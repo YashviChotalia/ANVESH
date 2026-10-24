@@ -27,6 +27,11 @@ class Settings:
     asr_device: str = os.getenv("ANVESH_ASR_DEVICE", "cpu")
     asr_compute: str = os.getenv("ANVESH_ASR_COMPUTE", "int8")
     enable_asr: bool = _bool("ANVESH_ENABLE_ASR", True)
+    # "en" decodes Hinglish speech as Roman script (best for extraction); "hi" gives Devanagari;
+    # "auto" detects but only among ANVESH_ASR_LANGS (prevents mislabels such as 'jw').
+    asr_language: str = os.getenv("ANVESH_ASR_LANGUAGE", "en")
+    asr_languages: tuple[str, ...] = tuple(os.getenv("ANVESH_ASR_LANGS", "hi,en").split(","))
+    asr_report_language: str = os.getenv("ANVESH_ASR_REPORT_LANGUAGE", "")
     emotion_model: str = os.getenv("ANVESH_EMOTION_MODEL", "iic/emotion2vec_plus_base")
     enable_emotion: bool = _bool("ANVESH_ENABLE_EMOTION", True)
     enable_speaker: bool = _bool("ANVESH_ENABLE_SPEAKER", True)

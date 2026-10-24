@@ -29,6 +29,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 @asynccontextmanager
 async def lifespan(_app):
     init_db()
+    M.warmup()  # load speech models in the background so the first live call does not wait
     yield
 
 
@@ -272,12 +273,15 @@ async def upload_recording(case_id: str, file: UploadFile = File(...), kind: str
     data = await file.read()
     if not data:
         raise HTTPException(422, "Empty file")
-    if M.asr.get() is None:
-        raise HTTPException(503, f"Speech-to-text model is not available on this server: {M.asr.status().error}. "
+    st = M.asr.status()
+    if st.state in ("disabled", "error"):
+        raise HTTPException(503, f"Speech-to-text model is not available on this server: {st.error}. "
                                  "Install requirements-ml.txt (see README).")
     offset = max((s.end for s in case.segments), default=0.0)
-    await asyncio.to_thread(pipeline.ingest_audio, db, case, data, file.filename or "upload", file.content_type,
-                            kind, who, offset)
+    x = await asyncio.to_thread(A.decode, data)
+    res = await asyncio.to_thread(pipeline.transcribe_and_analyse, x, case.mode, kind, offset)
+    pipeline.ingest_audio(db, case, data, file.filename or "upload", file.content_type, kind, who, offset,
+                          precomputed=res)
     db.refresh(case)
     pipeline.process(db, case, who)
     return case_detail(db, case)
@@ -429,10 +433,15 @@ async def live(ws: WebSocket, case_id: str, token: str | None = None, operator: 
         return
     await ws.accept()
     who = (operator or settings.operator)[:80]
-    if M.asr.get() is None:
-        await ws.send_json({"type": "error", "message": f"Speech-to-text model not available: {M.asr.status().error}"})
+    st = M.asr.status()
+    if st.state in ("disabled", "error"):
+        await ws.send_json({"type": "error", "message": f"Speech-to-text model not available: {st.error}"})
         await ws.close()
         return
+    if st.state != "ready":
+        M.asr.start_loading()
+        await ws.send_json({"type": "status", "message": "Speech-to-text model is still loading; audio is buffered "
+                                                         "and will be transcribed as soon as it is ready."})
     buf = bytearray()
     full = bytearray()
     chunk_bytes = int(settings.live_chunk_seconds * A.SR) * 2
@@ -443,32 +452,34 @@ async def live(ws: WebSocket, case_id: str, token: str | None = None, operator: 
             await ws.close()
             return
         offset = max((s.end for s in c0.segments), default=0.0)
+        mode = c0.mode
     start_offset = offset
 
     async def flush(final: bool = False):
         nonlocal offset
         if len(buf) < A.SR * 2 * 0.8 and not final:
             return
-        if not buf:
-            return
         x = A.pcm16_to_float(bytes(buf))
         buf.clear()
-        segs, lang = await asyncio.to_thread(M.asr.transcribe, x, offset)
+        # slow model work first, with no database transaction open
+        res = ({"segments": [], "language": None, "windows": []} if len(x) < A.SR // 2 else
+               await asyncio.to_thread(pipeline.transcribe_and_analyse, x, mode, "call", offset))
         with SessionLocal() as db:
             case = pipeline.get_case(db, case_id)
-            for s in segs:
-                s["language"] = lang
-            if segs:
-                pipeline.add_segments(db, case, segs)
-            case.language = case.language or lang
-            await asyncio.to_thread(pipeline.analyse_windows, case, x, offset)
+            if res["segments"]:
+                pipeline.add_segments(db, case, res["segments"])
+            case.language = case.language or res["language"]
+            if res["windows"]:
+                case.windows = list(case.windows or []) + res["windows"]
             db.flush()
             db.refresh(case)
             pipeline.process(db, case, who)
             if final and full:
                 wav = A.to_wav_bytes(A.pcm16_to_float(bytes(full)))
                 pipeline.ingest_audio(db, case, wav, f"live-{case.id}.wav", "audio/wav", "call", who,
-                                      start_offset, transcribe=False, analyse=False)
+                                      start_offset, precomputed={})
+                db.flush()
+                db.refresh(case)
             db.commit()
             detail = case_detail(db, case)
         offset += len(x) / A.SR

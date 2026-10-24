@@ -35,7 +35,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     const tick = () => api.get<Health>("/api/health").then((h) => { if (alive) { setHealth(h); setDown(false); } })
       .catch(() => alive && setDown(true));
     tick();
-    const t = setInterval(tick, 15000);
+    const t = setInterval(tick, 5000);
     return () => { alive = false; clearInterval(t); };
   }, []);
 
@@ -62,8 +62,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <div className="border-t border-line p-4 text-xs2">
           <div className="mb-2 font-medium text-fg-3">System</div>
           <Status label="API" state={down ? "off" : health ? "on" : "wait"} text={down ? "Unreachable" : health ? "Online" : "…"} />
-          <Status label="Speech-to-text" state={down ? "off" : m("asr")?.loaded ? "on" : "idle"} text={m("asr")?.loaded ? "Loaded" : "Loads on use"} />
-          <Status label="Voice emotion" state={down ? "off" : m("voice_emotion")?.loaded ? "on" : "idle"} text={m("voice_emotion")?.loaded ? "Loaded" : "Loads on use"} />
+          <ModelStatus label="Speech-to-text" m={m("asr")} down={down} />
+          <ModelStatus label="Voice emotion" m={m("voice_emotion")} down={down} />
         </div>
       </aside>
       <main className="min-w-0 flex-1">
@@ -76,6 +76,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
       </main>
     </div>
   );
+}
+
+const STATE_TEXT: Record<string, string> = { ready: "Ready", loading: "Loading…", idle: "Not loaded", error: "Error", disabled: "Off" };
+
+function ModelStatus({ label, m, down }: { label: string; m?: Health["models"][number]; down: boolean }) {
+  const st = down ? "off" : m?.state || (m?.loaded ? "ready" : "idle");
+  const dot = st === "ready" ? "on" : st === "error" || st === "off" ? "off" : "idle";
+  return <span title={m?.error || ""}><Status label={label} state={dot} text={down ? "—" : STATE_TEXT[st] || st} /></span>;
 }
 
 function Status({ label, state, text }: { label: string; state: "on" | "off" | "idle" | "wait"; text: string }) {

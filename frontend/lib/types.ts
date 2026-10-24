@@ -19,7 +19,7 @@ export interface Triage {
 }
 export interface Distress {
   enabled: boolean; level: "off" | "abstain" | "low" | "elevated" | "high"; score: number | null;
-  confidence: string; timeline: { t: number; score: number }[]; reasons: string[]; abstain_reasons: string[]; label: string;
+  confidence: string; timeline: { t: number; score: number; label?: string | null; p?: number | null }[]; reasons: string[]; abstain_reasons: string[]; label: string;
 }
 export interface Safety {
   coercion: boolean; crisis: boolean; coercion_hits: Hit[]; crisis_hits: Hit[];
@@ -52,4 +52,4 @@ export interface Stats {
   reported_loss: number; median_intake_seconds: number | null; last_24h: number;
 }
 export interface AuditEventT { id: number; ts: string; actor: string; action: string; case_id: string | null; payload: string; hash: string; prev_hash: string; model_version?: string | null }
-export interface Health { ok: boolean; version: string; models: { name: string; model: string; loaded: boolean; error?: string | null; license?: string | null }[]; validated_languages: string[] }
+export interface Health { ok: boolean; version: string; models: { name: string; model: string; loaded: boolean; state?: string; error?: string | null; license?: string | null }[]; validated_languages: string[] }

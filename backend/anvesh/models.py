@@ -137,7 +137,8 @@ class AuditEvent(Base):
 
 
 engine = create_engine(settings.database_url, future=True,
-                       connect_args={"check_same_thread": False} if settings.database_url.startswith("sqlite") else {})
+                       connect_args={"check_same_thread": False, "timeout": 30}
+                       if settings.database_url.startswith("sqlite") else {})
 
 
 if settings.database_url.startswith("sqlite"):

@@ -10,7 +10,7 @@ import { Empty, ErrorNote, KV, Panel, PriorityBadge, StatusTag, Tag } from "@/co
 import { api } from "@/lib/api";
 import { inr, MODE_LABEL, SPEAKER_LABEL, ts } from "@/lib/format";
 import { startLive, type LiveHandle } from "@/lib/live";
-import type { CaseDetail, CaseField, Evidence, LinkT, SegmentT } from "@/lib/types";
+import type { CaseDetail, CaseField, Evidence, Health, LinkT, SegmentT } from "@/lib/types";
 
 export default function CasePage() {
   return <Suspense fallback={<div className="p-6 text-fg-3">Loading case…</div>}><Workspace /></Suspense>;
@@ -157,6 +157,7 @@ function Transcript({ c, focus, setC, run, autostart }: {
   const [live, setLive] = useState<LiveHandle | null>(null);
   const [level, setLevel] = useState(0);
   const [liveErr, setLiveErr] = useState<string | null>(null);
+  const [liveNote, setLiveNote] = useState<string | null>(null);
   const [text, setText] = useState("");
   const speakers = c.mode === "suspect_recording" ? ["suspect", "caller"] : c.mode === "informant" ? ["informant", "officer"] : ["caller", "officer"];
   const [speaker, setSpeaker] = useState(speakers[0]);
@@ -178,6 +179,7 @@ function Transcript({ c, focus, setC, run, autostart }: {
       setLive(await startLive(api.wsUrl(c.id), (msg) => {
         if (msg.type === "update") setC(msg.case);
         if (msg.type === "error") setLiveErr(msg.message);
+        if (msg.type === "status") setLiveNote(msg.message);
       }, setLevel, setLiveErr));
     } catch (e: any) { setLiveErr(e?.message || "Microphone permission denied"); }
   };
@@ -222,10 +224,15 @@ function Transcript({ c, focus, setC, run, autostart }: {
       {live && (
         <div className="flex items-center gap-2 border-b border-line bg-crit-soft px-4 py-1.5 text-xs2 text-crit">
           <span className="h-1.5 w-1.5 rounded-full bg-crit" /> Recording · transcribed in 5-second segments
+          {c.mode !== "suspect_recording" && (() => {
+            const last = [...(c.distress?.timeline || [])].reverse().find((p) => p.label);
+            return last ? <span className="ml-3 text-fg-2">Voice: <b className="font-medium capitalize text-fg">{last.label}</b> {Math.round((last.p || 0) * 100)}%</span> : null;
+          })()}
           <span className="ml-auto h-1.5 w-24 overflow-hidden rounded-full bg-crit-line"><span className="block h-full bg-crit" style={{ width: `${Math.min(100, level * 300)}%` }} /></span>
         </div>
       )}
       {liveErr && <div className="px-4 pt-3"><ErrorNote msg={liveErr} /></div>}
+      {live && liveNote && !c.segments.length && <div className="border-b border-line bg-warn-soft px-4 py-1.5 text-xs2 text-warn">{liveNote}</div>}
       <div className="scroll-thin flex-1 overflow-y-auto px-2 py-2">
         {c.segments.length === 0 && <Empty title="No transcript yet" body="Start live capture, upload a recording, or type what the caller says." />}
         {c.segments.map((s) => (
@@ -511,20 +518,39 @@ function Linked({ c, reload }: { c: CaseDetail; reload: () => void }) {
   );
 }
 
+const EMO_TONE: Record<string, string> = { fearful: "text-crit", sad: "text-warn", angry: "text-warn", disgusted: "text-warn", neutral: "text-fg-2", happy: "text-ok", surprised: "text-fg-2" };
+
 function Distress({ c }: { c: CaseDetail }) {
   const d = c.distress;
+  const [emoState, setEmoState] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const tick = () => api.get<Health>("/api/health").then((h) => alive && setEmoState(h.models.find((m) => m.name === "voice_emotion")?.state || null)).catch(() => {});
+    tick();
+    const t = setInterval(tick, 5000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
   if (!d) return null;
   if (!d.enabled) return <div className="p-4 text-[13px] text-fg-2">Disabled for this call type. Anvesh does not analyse emotion in suspect recordings.</div>;
   const level = { high: ["High", "text-crit"], elevated: ["Elevated", "text-warn"], low: ["Low", "text-ok"], abstain: ["Not assessed", "text-fg-3"], off: ["Off", "text-fg-3"] }[d.level];
   const pts = d.timeline;
+  const labelled = pts.filter((p) => p.label);
+  const latest = labelled.at(-1);
   const W = 300, H = 56;
   const maxT = Math.max(...pts.map((p) => p.t), 1);
   const path = pts.map((p, i) => `${i ? "L" : "M"}${((p.t / maxT) * W).toFixed(1)},${(H - p.score * H).toFixed(1)}`).join(" ");
   return (
     <div className="space-y-3 p-4">
-      <div className="flex items-baseline justify-between">
-        <span className={clsx("text-[15px] font-semibold", level[1])}>{level[0]}</span>
-        <span className="text-xs2 text-fg-3">{d.score !== null ? `score ${d.score.toFixed(2)} · ` : ""}confidence {d.confidence}</span>
+      {emoState && emoState !== "ready" && (
+        <div className="rounded border border-warn-line bg-warn-soft px-3 py-2 text-xs2 text-warn">
+          {emoState === "loading" ? "Voice emotion model is loading (first run downloads about 1 GB). Pitch and energy are analysed meanwhile." :
+            emoState === "error" ? "Voice emotion model failed to load; only pitch and energy are analysed. See the backend log." :
+              "Voice emotion model not loaded; only pitch and energy are analysed."}
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-3">
+        <KV k="Distress level" v={<span className={clsx("text-[15px] font-semibold", level[1])}>{level[0]}</span>} />
+        <KV k="Latest voice emotion" v={latest ? <span className={clsx("text-[15px] font-semibold capitalize", EMO_TONE[latest.label || ""] || "text-fg")}>{latest.label} <span className="text-[12px] font-normal text-fg-3">{Math.round((latest.p || 0) * 100)}%</span></span> : <span className="text-fg-3">—</span>} />
       </div>
       {pts.length > 1 && (
         <svg viewBox={`0 0 ${W} ${H + 2}`} className="w-full" role="img" aria-label="Distress over the call">
@@ -533,6 +559,25 @@ function Distress({ c }: { c: CaseDetail }) {
           <path d={path} fill="none" stroke="#475467" strokeWidth="1.5" strokeLinejoin="round" />
         </svg>
       )}
+      {labelled.length > 0 && (
+        <div>
+          <div className="label mb-1">Per 3-second window</div>
+          <div className="scroll-thin max-h-40 overflow-y-auto rounded border border-line">
+            <table className="w-full text-xs2">
+              <tbody>
+                {[...labelled].reverse().map((p, i) => (
+                  <tr key={i} className="border-b border-line last:border-0">
+                    <td className="mono px-2 py-1 text-fg-3">{ts(p.t)}</td>
+                    <td className={clsx("px-2 py-1 font-medium capitalize", EMO_TONE[p.label || ""] || "text-fg")}>{p.label}</td>
+                    <td className="px-2 py-1 text-right text-fg-3">{Math.round((p.p || 0) * 100)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      <div className="text-xs2 text-fg-3">{d.score !== null ? `Score ${d.score.toFixed(2)} · ` : ""}confidence {d.confidence}</div>
       <ul className="space-y-0.5 text-xs2 text-fg-2">{d.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
       {d.abstain_reasons.length > 0 && (
         <div className="rounded border border-line bg-bg px-3 py-2 text-xs2 text-fg-2">

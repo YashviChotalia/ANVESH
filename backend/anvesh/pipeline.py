@@ -52,50 +52,66 @@ def add_segments(db: Session, case: Case, items: list[dict], recording_id: str |
     return rows
 
 
-def ingest_audio(db: Session, case: Case, data: bytes, filename: str, mime: str, kind: str, actor: str,
-                 offset: float = 0.0, transcribe: bool = True, analyse: bool = True) -> Recording:
-    digest = audit.sha256_bytes(data)
-    path = storage.save(digest, data)
-    rec = Recording(id=new_id("RC"), case_id=case.id, kind=kind, filename=filename, mime=mime or "audio/wav",
-                    sha256=digest, size_bytes=len(data), stored_path=path)
-    db.add(rec)
-    db.flush()
-    audit.record(db, actor, "recording.ingested", case.id,
-                 {"recording_id": rec.id, "sha256": digest, "bytes": len(data), "filename": filename, "kind": kind},
-                 model_version())
-    x = A.decode(data)
-    rec.duration = round(len(x) / A.SR, 2)
+def transcribe_and_analyse(x: np.ndarray, mode: str, kind: str, offset: float = 0.0,
+                           transcribe: bool = True, analyse: bool = True) -> dict:
+    """All slow model work, done WITHOUT holding a database transaction."""
+    out: dict = {"segments": [], "language": None, "windows": [], "embedding": None}
     if transcribe:
         segs, lang = M.asr.transcribe(x, offset=offset)
         speaker = "suspect" if kind == "suspect_audio" else None
         for s in segs:
             s["language"] = lang
             s["speaker"] = speaker
-        add_segments(db, case, segs, rec.id)
-        case.language = case.language or lang
-    if analyse:
-        analyse_windows(case, x, offset)
+        out["segments"], out["language"] = segs, lang
+    if analyse and mode != "suspect_recording":
+        out["windows"] = compute_windows(x, offset)
     if kind == "suspect_audio":
-        emb = M.speaker.embed(x)
-        if emb:
-            rec.speaker_embedding = emb
+        out["embedding"] = M.speaker.embed(x)
+    return out
+
+
+def ingest_audio(db: Session, case: Case, data: bytes, filename: str, mime: str, kind: str, actor: str,
+                 offset: float = 0.0, transcribe: bool = True, analyse: bool = True,
+                 precomputed: dict | None = None) -> Recording:
+    digest = audit.sha256_bytes(data)
+    x = A.decode(data)
+    res = precomputed if precomputed is not None else transcribe_and_analyse(
+        x, case.mode, kind, offset, transcribe, analyse)
+    path = storage.save(digest, data)
+    rec = Recording(id=new_id("RC"), case_id=case.id, kind=kind, filename=filename, mime=mime or "audio/wav",
+                    sha256=digest, size_bytes=len(data), stored_path=path, duration=round(len(x) / A.SR, 2),
+                    speaker_embedding=res.get("embedding"))
+    db.add(rec)
+    db.flush()
+    audit.record(db, actor, "recording.ingested", case.id,
+                 {"recording_id": rec.id, "sha256": digest, "bytes": len(data), "filename": filename, "kind": kind},
+                 model_version())
+    if res.get("segments"):
+        add_segments(db, case, res["segments"], rec.id)
+        case.language = case.language or res.get("language")
+    if res.get("windows"):
+        case.windows = list(case.windows or []) + res["windows"]
     return rec
 
 
-def analyse_windows(case: Case, x: np.ndarray, offset: float = 0.0) -> None:
-    """Voice windows for the distress track. Never computed for suspects."""
-    if case.mode == "suspect_recording":
-        return
-    win = list(case.windows or [])
+def compute_windows(x: np.ndarray, offset: float = 0.0) -> list[dict]:
+    """Voice windows for the distress track (emotion model if ready + acoustic features)."""
+    out = []
     for t0, t1, chunk in A.windows(x, 3.0):
         emo = None
         try:
             emo = M.emotion.predict(chunk)
         except Exception as e:  # pragma: no cover
             log.warning("emotion inference failed: %s", e)
-        win.append({"t_start": round(t0 + offset, 2), "t_end": round(t1 + offset, 2), "emotions": emo,
+        out.append({"t_start": round(t0 + offset, 2), "t_end": round(t1 + offset, 2), "emotions": emo,
                     "acoustic": A.features(chunk)})
-    case.windows = win
+    return out
+
+
+def analyse_windows(case: Case, x: np.ndarray, offset: float = 0.0) -> None:
+    if case.mode == "suspect_recording":
+        return
+    case.windows = list(case.windows or []) + compute_windows(x, offset)
 
 
 # --- analysis ------------------------------------------------------------------------------
