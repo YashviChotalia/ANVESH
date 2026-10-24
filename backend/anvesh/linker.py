@@ -22,7 +22,7 @@ from .models import Case, Entity, FieldRow, Link, Recording
 
 log = logging.getLogger("anvesh.linker")
 
-SCRIPT_THRESHOLD = 0.32
+SCRIPT_THRESHOLD = 0.40
 VOICE_THRESHOLD = 0.62
 ENTITY_LABELS = {"upi_id": "UPI ID", "phone_number": "phone number", "account_number": "account number",
                  "ifsc": "IFSC", "transaction_id": "UTR", "email": "email"}
@@ -87,8 +87,10 @@ def link_case(db: Session, case: Case) -> int:
 
     # 2) scam script
     if case.narrative and len(case.narrative) > 40:
-        rows = db.execute(select(Case.id, Case.narrative).where(Case.id != case.id)).all()
-        rows = [r for r in rows if r.narrative and len(r.narrative) > 40 and r.id in pool]
+        rows = db.execute(select(Case.id, Case.narrative, Case.playbook_key).where(Case.id != case.id)).all()
+        # same scam script implies the same scam type: compare only within the detected type (or unknown)
+        rows = [r for r in rows if r.narrative and len(r.narrative) > 40 and r.id in pool
+                and (not case.playbook_key or not r.playbook_key or r.playbook_key == case.playbook_key)]
         sims = script_similarity(case.narrative, [r.narrative for r in rows])
         for r, s in zip(rows, sims):
             if s >= SCRIPT_THRESHOLD:

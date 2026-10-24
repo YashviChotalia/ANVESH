@@ -18,7 +18,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timedelta
 
-from . import audit, official, pipeline
+from . import audit, official, pipeline, synth
 from .models import Base, Case, Entity, Link, SessionLocal, engine, init_db
 
 O, C, S = "officer", "caller", "suspect"
@@ -138,7 +138,7 @@ def _retire_legacy_demo(db) -> None:
     db.flush()
 
 
-def seed(reset: bool = False, none: bool = False) -> int:
+def seed(reset: bool = False, none: bool = False, generated: int = 60) -> int:
     if reset or none:
         Base.metadata.drop_all(engine)
     init_db()
@@ -148,9 +148,10 @@ def seed(reset: bool = False, none: bool = False) -> int:
     made = 0
     with SessionLocal() as db:
         _retire_legacy_demo(db)
-        for i, d in enumerate(DEMO):
+        batch = [("T", i, d) for i, d in enumerate(DEMO)] + [("G", i, d) for i, d in enumerate(synth.generate(generated))]
+        for prefix, i, d in batch:
             started = now - timedelta(minutes=d["ago"])
-            cid = f"AV-{started.year}-T{i + 1:04d}"
+            cid = f"AV-{now.year}-{prefix}{i + 1:04d}"
             if pipeline.get_case(db, cid):
                 continue
             case = Case(id=cid, mode=d["mode"], channel="upload" if d["mode"] == "suspect_recording" else
@@ -172,8 +173,9 @@ def seed(reset: bool = False, none: bool = False) -> int:
             pipeline.process(db, case, "seed", now=now)
             made += 1
         # second pass so earlier cases also see links to later ones
-        for case in db.query(Case).all():
-            pipeline.process(db, case, "seed", now=now)
+        if made:
+            for case in db.query(Case).filter(Case.synthetic.is_(True)).all():
+                pipeline.process(db, case, "seed", now=now)
         db.commit()
     return made
 
@@ -182,6 +184,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--reset", action="store_true")
     ap.add_argument("--none", action="store_true", help="empty database, no training scenarios")
+    ap.add_argument("--generated", type=int, default=60, help="synthetic cases to generate (training workspace)")
     a = ap.parse_args()
-    n = seed(a.reset, a.none)
+    n = seed(a.reset, a.none, a.generated)
     print(f"Loaded {n} training scenarios." if not a.none else "Database reset; no training scenarios loaded.")
