@@ -36,10 +36,23 @@ def test_live_session_transcribes_scores_voice_and_saves_evidence(monkeypatch):
         for i in range(0, len(tone), 8000):
             ws.send_bytes(tone[i:i + 8000])
         ws.send_bytes(b"\x00\x00" * 16000)  # a 1 s pause: the server cuts the chunk here
-        first = ws.receive_json()
-        assert first["type"] == "update" and first["case"]["segments"]
+        seen = []
+        while True:  # status / emotion messages arrive alongside transcript updates
+            m = ws.receive_json()
+            seen.append(m)
+            if m["type"] == "update":
+                break
+        assert m["case"]["segments"]
+        emo = [x for x in seen if x["type"] == "emotion" and not x["silent"]]
         ws.send_text('{"type":"stop"}')
-        final = ws.receive_json()
+        while True:
+            m = ws.receive_json()
+            if m["type"] == "emotion":
+                emo.append(m)
+            if m["type"] == "update" and m.get("final"):
+                final = m
+                break
+    assert emo and emo[-1]["indicators"] and set(emo[-1]["indicators"]) == {"fear", "anger", "distress", "nervousness"}
     c = final["case"]
     fields = {f["name"]: f for f in c["fields"]}
     assert fields["amount_lost"]["value"] == "20000"

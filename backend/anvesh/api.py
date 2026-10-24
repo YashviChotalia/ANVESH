@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field as PField
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import audit, auth, linker, official, pipeline, retention, storage
+from . import audit, auth, linker, live_ser, official, pipeline, retention, storage
 from .auth import Principal
 from .security_http import MAX_UPLOAD_BYTES, SecurityMiddleware
 from .config import settings
@@ -759,8 +759,6 @@ async def live(ws: WebSocket, case_id: str):
         return
     await ws.accept()
     who = p.actor
-    started = time.monotonic()
-    max_bytes = int(A.SR * 2 * 60 * MAX_LIVE_MINUTES)
     st = M.asr.status()
     if st.state in ("disabled", "error"):
         await ws.send_json({"type": "error", "message": f"Speech-to-text model not available: {st.error}"})
@@ -768,62 +766,114 @@ async def live(ws: WebSocket, case_id: str):
         return
     if st.state != "ready":
         M.asr.start_loading()
-        await ws.send_json({"type": "status", "message": "Speech-to-text model is still loading; audio is buffered "
-                                                         "and will be transcribed as soon as it is ready."})
-    buf = bytearray()
-    full = bytearray()
-    chunk_bytes = int(settings.live_chunk_seconds * A.SR) * 2  # target; cut earlier at a pause
+        await ws.send_json({"type": "status", "stage": "loading", "message": "Speech-to-text model is still loading; "
+                            "audio is buffered and will be transcribed as soon as it is ready."})
     with SessionLocal() as db0:
         c0 = pipeline.get_case(db0, case_id)
         if not c0:
             await ws.send_json({"type": "error", "message": "Case not found"})
             await ws.close()
             return
-        offset = max((s.end for s in c0.segments), default=0.0)
+        start_offset = max((s.end for s in c0.segments), default=0.0)
         mode = c0.mode
-    start_offset = offset
-    prev_text: list[str] = []
-    saved_rec: list[str] = []
+    if st.state == "ready":
+        await ws.send_json({"type": "status", "message": "Listening", "stage": "listening"})
 
-    async def flush(final: bool = False):
-        nonlocal offset
-        if len(buf) < A.SR * 2 * 0.8 and not final:
-            return
-        x = A.pcm16_to_float(bytes(buf))
-        buf.clear()
-        # slow model work first, with no database transaction open
-        res = ({"segments": [], "language": None, "windows": []} if len(x) < A.SR // 2 else
-               await asyncio.to_thread(pipeline.transcribe_and_analyse, x, mode, "call", offset, True, True,
-                                       " ".join(prev_text[-3:])))
-        prev_text.extend(s.get("text_native") or s["text"] for s in res["segments"])
-        with SessionLocal() as db:
-            case = pipeline.get_case(db, case_id)
-            if res["segments"]:
-                pipeline.add_segments(db, case, res["segments"])
-            case.language = case.language or res["language"]
-            if res["windows"]:
-                case.windows = list(case.windows or []) + res["windows"]
-            db.flush()
-            db.refresh(case)
-            pipeline.process(db, case, who)
-            if final and full:
-                wav = A.to_wav_bytes(A.pcm16_to_float(bytes(full)))
-                rec = pipeline.ingest_audio(db, case, wav, f"live-{case.id}.wav", "audio/wav", "call", who,
-                                            start_offset, precomputed={})
-                for sg in case.segments:  # tie this session's lines to the saved audio for playback
-                    if sg.recording_id is None and sg.start >= start_offset - 0.01:
-                        sg.recording_id = rec.id
-                saved_rec.append(rec.id)
-                if M.asr_final.enabled:
-                    case.processing = f"Refining transcript with {M.asr_final.model_id}…"
-                db.flush()
-                db.refresh(case)
-            db.commit()
-            detail = case_detail(db, case, p)
-        offset += len(x) / A.SR
-        await ws.send_json({"type": "update", "case": detail, "final": final})
-        if final and saved_rec and M.asr_final.enabled:
-            pipeline.refine_async(case_id, saved_rec[0], who)
+    # Receiving never waits for the models: audio goes into two queues, served by two workers.
+    full = bytearray()          # the whole call, saved as evidence at the end
+    buf = bytearray()           # audio not yet sent for transcription
+    buf_start = start_offset    # case-timeline time of buf[0]
+    emo_ring = bytearray()      # last WINDOW_S of audio for the emotion track
+    emo_since = 0               # bytes received since the last emotion window
+    asr_q: asyncio.Queue = asyncio.Queue()
+    emo_q: asyncio.Queue = asyncio.Queue(maxsize=2)
+    chunker = live_ser.Chunker(target_s=settings.live_chunk_seconds)
+    tracker = live_ser.LiveEmotionTracker(M.emotion.predict if mode != "suspect_recording" else None)
+    pending_windows: list[dict] = []
+    prev_text: list[str] = []
+    stats = {"chunks": 0, "empty": 0}
+    send_lock = asyncio.Lock()
+
+    async def send(msg: dict) -> None:
+        async with send_lock:
+            try:
+                await ws.send_json(msg)
+            except Exception:
+                pass
+
+    async def asr_worker() -> None:
+        while True:
+            item = await asr_q.get()
+            try:
+                if item is None:
+                    return
+                t0, pcm = item
+                x = A.pcm16_to_float(pcm)
+                rms = float(np.sqrt(np.mean(x ** 2))) if len(x) else 0.0
+                started = time.monotonic()
+                await send({"type": "status", "stage": "transcribing", "message": "Transcribing…",
+                            "backlog": asr_q.qsize()})
+                res = (await asyncio.to_thread(pipeline.transcribe_and_analyse, x, mode, "call", t0, True, False,
+                                               " ".join(prev_text[-3:]))) if len(x) >= A.SR // 2 else {"segments": [], "language": None}
+                took = time.monotonic() - started
+                stats["chunks"] += 1
+                stats["empty"] += not res["segments"]
+                log.info("live %s: chunk %.1fs rms=%.4f -> %d segments in %.1fs (%s)", case_id, len(x) / A.SR, rms,
+                         len(res["segments"]), took, getattr(M.asr, "last_stats", {}))
+                prev_text.extend(sg.get("text_native") or sg["text"] for sg in res["segments"])
+                with SessionLocal() as db:
+                    case = pipeline.get_case(db, case_id)
+                    if res["segments"]:
+                        pipeline.add_segments(db, case, res["segments"])
+                    case.language = case.language or res.get("language")
+                    if pending_windows:
+                        case.windows = list(case.windows or []) + pending_windows
+                        pending_windows.clear()
+                    db.flush()
+                    db.refresh(case)
+                    pipeline.process(db, case, who)
+                    db.commit()
+                    detail = case_detail(db, case, p)
+                hint = None
+                if not res["segments"]:
+                    hint = ("No speech heard: check that the right microphone is selected and not muted."
+                            if rms < 0.004 else "Speech was too unclear to transcribe; ask the caller to repeat.")
+                await send({"type": "update", "case": detail, "final": False, "hint": hint,
+                            "latency_s": round(took, 1), "backlog": asr_q.qsize()})
+            except Exception:  # pragma: no cover - keep the call alive
+                log.exception("live transcription chunk failed")
+                await send({"type": "status", "stage": "error", "message": "One segment could not be transcribed."})
+            finally:
+                asr_q.task_done()
+
+    async def emo_worker() -> None:
+        while True:
+            item = await emo_q.get()
+            if item is None:
+                return
+            t0, pcm = item
+            try:
+                rec = await asyncio.to_thread(tracker.analyse, A.pcm16_to_float(pcm), t0)
+                if not rec["silent"]:
+                    pending_windows.append({k: rec[k] for k in ("t_start", "t_end", "emotions", "acoustic", "silent",
+                                                                "label", "p")})
+                await send({"type": "emotion", "t": rec["t_end"], "silent": rec["silent"], "label": rec["label"],
+                            "p": rec["p"], "arousal": rec["arousal"], "indicators": rec["indicators"],
+                            "model": M.emotion.state if mode != "suspect_recording" else "off"})
+            except Exception:  # pragma: no cover
+                log.exception("live emotion window failed")
+
+    workers = [asyncio.create_task(asr_worker()), asyncio.create_task(emo_worker())]
+    max_bytes = int(A.SR * 2 * 60 * MAX_LIVE_MINUTES)
+    started = time.monotonic()
+    stopped = False
+
+    def cut(final: bool = False) -> None:
+        nonlocal buf, buf_start
+        if buf and (final or len(buf) >= A.SR * 2 * 0.5):
+            asr_q.put_nowait((buf_start, bytes(buf)))
+            buf_start += len(buf) / (A.SR * 2)
+            buf = bytearray()
 
     try:
         while True:
@@ -831,29 +881,72 @@ async def live(ws: WebSocket, case_id: str):
             if msg.get("type") == "websocket.disconnect":
                 break
             if msg.get("bytes"):
-                if len(msg["bytes"]) > 256 * 1024 or len(full) > max_bytes or time.monotonic() - started > MAX_LIVE_MINUTES * 60:
-                    await ws.send_json({"type": "error", "message": "Live session limit reached; saving the call."})
-                    await flush(final=True)
-                    await ws.close()
+                data = msg["bytes"]
+                if len(data) > 256 * 1024 or len(full) > max_bytes or time.monotonic() - started > MAX_LIVE_MINUTES * 60:
+                    await send({"type": "error", "message": "Live session limit reached; saving the call."})
+                    stopped = True
                     break
-                buf.extend(msg["bytes"])
-                full.extend(msg["bytes"])
-                # cut at a pause (better words) or at the max chunk length
-                if len(buf) >= chunk_bytes * 2.4 or (len(buf) >= chunk_bytes * 0.6 and
-                                                     A.trailing_silence(bytes(buf[-int(A.SR * 0.7) * 2:]))):
-                    await flush()
+                if len(data) % 2:
+                    data = data[:-1]
+                full.extend(data)
+                buf.extend(data)
+                chunker.observe(data)
+                emo_ring.extend(data)
+                win_bytes = int(live_ser.WINDOW_S * A.SR) * 2
+                if len(emo_ring) > win_bytes:
+                    del emo_ring[:len(emo_ring) - win_bytes]
+                emo_since += len(data)
+                if emo_since >= int(live_ser.HOP_S * A.SR) * 2 and len(emo_ring) >= win_bytes * 0.8 and not emo_q.full():
+                    emo_since = 0
+                    t_end = start_offset + len(full) / (A.SR * 2)
+                    emo_q.put_nowait((t_end - len(emo_ring) / (A.SR * 2), bytes(emo_ring)))
+                tail = bytes(buf[-int(A.SR * 0.5) * 2:])
+                if chunker.should_cut(len(buf) / (A.SR * 2), tail):
+                    cut()
             elif msg.get("text"):
-                if len(msg["text"]) > 1024:
-                    continue
-                if '"stop"' in msg["text"]:
-                    await flush(final=True)
-                    await ws.close()
+                if len(msg["text"]) <= 1024 and '"stop"' in msg["text"]:
+                    stopped = True
                     break
     except WebSocketDisconnect:
         pass
     except Exception:  # pragma: no cover
         log.exception("live session failed")
-        try:
-            await ws.send_json({"type": "error", "message": "Live processing failed; see the server log."})
-        except Exception:
-            pass
+        await send({"type": "error", "message": "Live processing failed; see the server log."})
+
+    # Finish: transcribe what is left, then save the whole call as evidence (also if the browser vanished).
+    cut(final=True)
+    if stopped:
+        await send({"type": "status", "stage": "saving", "message": "Finishing the transcript and saving the call…",
+                    "backlog": asr_q.qsize()})
+    await asr_q.join()
+    await emo_q.put(None)
+    await asr_q.put(None)
+    await asyncio.gather(*workers, return_exceptions=True)
+    detail = None
+    if full:
+        with SessionLocal() as db:
+            case = pipeline.get_case(db, case_id)
+            if pending_windows:
+                case.windows = list(case.windows or []) + pending_windows
+            wav = A.to_wav_bytes(A.pcm16_to_float(bytes(full)))
+            rec = pipeline.ingest_audio(db, case, wav, f"live-{case.id}.wav", "audio/wav", "call", who,
+                                        start_offset, precomputed={})
+            for sg in case.segments:  # tie this session's lines to the saved audio for playback
+                if sg.recording_id is None and sg.start >= start_offset - 0.01:
+                    sg.recording_id = rec.id
+            if M.asr_final.enabled:
+                case.processing = f"Refining transcript with {M.asr_final.model_id}…"
+            db.flush()
+            db.refresh(case)
+            pipeline.process(db, case, who)
+            db.commit()
+            detail = case_detail(db, case, p)
+            rec_id = rec.id
+        log.info("live %s: saved %.1fs, %d chunks (%d empty)", case_id, len(full) / (A.SR * 2), stats["chunks"], stats["empty"])
+        if M.asr_final.enabled:
+            pipeline.refine_async(case_id, rec_id, who)
+    await send({"type": "update", "case": detail, "final": True} if detail else {"type": "status", "stage": "done", "message": "No audio was received."})
+    try:
+        await ws.close()
+    except Exception:
+        pass

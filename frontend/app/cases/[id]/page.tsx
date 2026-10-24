@@ -178,6 +178,62 @@ function SafetyAlert({ c, onJump }: { c: CaseDetail; onJump: (e: any) => void })
 
 /* ------------------------------------------------------------------ transcript */
 
+interface VoiceReading { t: number; silent: boolean; label: string | null; p: number | null; arousal: number | null; indicators: Record<string, number> | null; model?: string }
+const STAGE_TEXT: Record<string, string> = { listening: "Listening", transcribing: "Transcribing", loading: "Loading speech model", saving: "Saving the call", saved: "Saved", error: "Problem with one segment" };
+const SIGNALS: [string, string][] = [["distress", "Distress"], ["fear", "Fear"], ["anger", "Anger"], ["nervousness", "Nervousness"]];
+const EMO_NAME: Record<string, string> = { fearful: "Fearful", angry: "Angry", sad: "Sad", neutral: "Calm / neutral", happy: "Happy", surprised: "Surprised", disgusted: "Disgusted", uncertain: "Uncertain" };
+
+/** Live speech-emotion panel: current reading, four signals and the last ~90 s. Indicative only. */
+function LiveVoice({ readings, live }: { readings: VoiceReading[]; live: boolean }) {
+  const voiced = readings.filter((r) => !r.silent);
+  const cur = voiced.at(-1);
+  const ind = cur?.indicators || {};
+  const modelOff = cur && !cur.label && cur.model !== "ready";
+  const tone = (v: number) => (v >= 0.6 ? "bg-crit" : v >= 0.35 ? "bg-warn" : "bg-ok");
+  return (
+    <div className="border-b border-line px-4 py-3">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-xs2 font-medium text-fg-3">Voice signals {live ? "· live" : "· this session"}</div>
+        <div className="text-[11px] text-fg-4">Indicative only, not evidence</div>
+      </div>
+      {!cur ? (
+        <div className="text-[13px] text-fg-3">{live ? "Waiting for the caller to speak…" : "No voiced audio in this session."}</div>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-[170px_1fr]">
+          <div>
+            <div className="text-[15px] font-semibold text-fg">{cur.label ? EMO_NAME[cur.label] || cur.label : "Voice stress only"}</div>
+            <div className="text-xs2 text-fg-3">
+              {cur.label && cur.label !== "uncertain" && cur.p ? `${Math.round(cur.p * 100)}% · smoothed` : modelOff ? "Emotion model loading; using voice stress" : "Low confidence"}
+            </div>
+            {cur.arousal !== null && (
+              <div className="mt-2">
+                <div className="flex justify-between text-[11px] text-fg-3"><span title="Loudness, pitch and speaking rate compared with this caller's own voice earlier in the call">Voice stress</span><span>{cur.arousal > 0.7 ? "Raised" : cur.arousal < 0.4 ? "Calm" : "Usual"}</span></div>
+                <div className="mt-0.5 h-1.5 rounded-full bg-bg"><div className={clsx("h-1.5 rounded-full", tone(cur.arousal))} style={{ width: `${cur.arousal * 100}%` }} /></div>
+              </div>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+            {SIGNALS.map(([k, label]) => (
+              <div key={k}>
+                <div className="flex justify-between text-[11.5px]"><span className="text-fg-2">{label}</span><span className="tabular-nums text-fg-3">{Math.round((ind[k] || 0) * 100)}</span></div>
+                <div className="mt-0.5 h-1.5 rounded-full bg-bg"><div className={clsx("h-1.5 rounded-full", tone(ind[k] || 0))} style={{ width: `${(ind[k] || 0) * 100}%` }} /></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {voiced.length > 1 && (
+        <div className="mt-3 flex h-8 items-end gap-px" title="Distress over the last readings (one bar ≈ 1.5 s)">
+          {readings.map((r, i) => {
+            const v = r.silent ? 0 : r.indicators?.distress || 0;
+            return <div key={i} className={clsx("flex-1 rounded-t-sm", r.silent ? "bg-line" : tone(v))} style={{ height: `${r.silent ? 6 : Math.max(10, v * 100)}%` }} />;
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Transcript({ c, focus, onLive, run, autostart, player, onPlaySeg }: {
   c: CaseDetail; focus: { seg: string; s: number } | null; onLive: (c: CaseDetail) => void;
   run: (p: Promise<CaseDetail>) => Promise<void>; autostart: string | null;
@@ -193,6 +249,11 @@ function Transcript({ c, focus, onLive, run, autostart, player, onPlaySeg }: {
   const [level, setLevel] = useState(0);
   const [liveErr, setLiveErr] = useState<string | null>(null);
   const [liveNote, setLiveNote] = useState<string | null>(null);
+  const [voice, setVoice] = useState<VoiceReading[]>([]);
+  const [stage, setStage] = useState<{ stage?: string; latency?: number; backlog?: number; hint?: string | null }>({});
+  const [needsClick, setNeedsClick] = useState(false);
+  const lastSound = useRef(0);
+  const onLevel = (peak: number) => { setLevel(peak); if (peak > 0.01) lastSound.current = Date.now(); };
   const [text, setText] = useState("");
   const speakers = c.mode === "suspect_recording" ? ["suspect", "caller"] : c.mode === "informant" ? ["informant", "officer"] : ["caller", "officer"];
   const [speaker, setSpeaker] = useState(speakers[0]);
@@ -208,14 +269,21 @@ function Transcript({ c, focus, onLive, run, autostart, player, onPlaySeg }: {
   }, [c.fields]);
 
   const toggleLive = async () => {
-    if (live) { live.stop(); setLive(null); setLevel(0); return; }
-    setLiveErr(null);
+    if (live) { live.stop(); setLive(null); setLevel(0); setNeedsClick(false); return; }
+    setLiveErr(null); setVoice([]); setStage({});
     try {
-      setLive(await startLive(api.wsUrl(c.id), (msg) => {
-        if (msg.type === "update") onLive(msg.case);
+      const h = await startLive(api.wsUrl(c.id), (msg) => {
+        if (msg.type === "update") {
+          if (msg.case) onLive(msg.case);
+          setStage((s) => ({ ...s, stage: msg.final ? "saved" : "listening", latency: msg.latency_s, backlog: msg.backlog, hint: msg.hint }));
+        }
+        if (msg.type === "emotion") setVoice((v) => [...v.slice(-59), msg]);
         if (msg.type === "error") setLiveErr(msg.message);
-        if (msg.type === "status") setLiveNote(msg.message);
-      }, setLevel, setLiveErr));
+        if (msg.type === "status") { setLiveNote(msg.message); setStage((s) => ({ ...s, stage: msg.stage, backlog: msg.backlog })); }
+      }, onLevel, setLiveErr);
+      lastSound.current = Date.now();
+      setLive(h);
+      setNeedsClick(h.suspended());
     } catch (e: any) { setLiveErr(e?.message || "Microphone permission denied"); }
   };
 
@@ -223,6 +291,7 @@ function Transcript({ c, focus, onLive, run, autostart, player, onPlaySeg }: {
     if (started.current) return;
     started.current = true;
     if (autostart === "upload") setTimeout(() => fileRef.current?.click(), 300);
+    if (autostart === "live") setTimeout(() => toggleLive(), 300); // started from New intake
   }, [autostart]);
   useEffect(() => () => live?.stop(), [live]);
   useEffect(() => { if (live) endRef.current?.scrollIntoView({ block: "end" }); }, [c.segments.length, live]);
@@ -271,14 +340,24 @@ function Transcript({ c, focus, onLive, run, autostart, player, onPlaySeg }: {
       </header>
       {live && (
         <div className="flex items-center gap-2 border-b border-line bg-crit-soft px-4 py-1.5 text-xs2 text-crit">
-          <span className="h-1.5 w-1.5 rounded-full bg-crit" /> Recording · transcribed in 5-second segments
-          {c.mode !== "suspect_recording" && (() => {
-            const last = [...(c.distress?.timeline || [])].reverse().find((p) => p.label);
-            return last ? <span className="ml-3 text-fg-2">Voice: <b className="font-medium capitalize text-fg">{last.label}</b> {Math.round((last.p || 0) * 100)}%</span> : null;
-          })()}
-          <span className="ml-auto h-1.5 w-24 overflow-hidden rounded-full bg-crit-line"><span className="block h-full bg-crit" style={{ width: `${Math.min(100, level * 300)}%` }} /></span>
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-crit" /> Recording
+          <span className="text-fg-3">· {STAGE_TEXT[stage.stage || "listening"] || "Listening"}{stage.latency ? ` · last segment ${stage.latency}s` : ""}{stage.backlog ? ` · ${stage.backlog} waiting` : ""}</span>
+          <span className="ml-auto flex items-center gap-1.5 text-fg-3">Mic
+            <span className="h-1.5 w-24 overflow-hidden rounded-full bg-crit-line"><span className="block h-full bg-crit transition-[width] duration-100" style={{ width: `${Math.min(100, level * 300)}%` }} /></span>
+          </span>
         </div>
       )}
+      {live && needsClick && (
+        <button onClick={async () => { await live.resume(); setNeedsClick(live.suspended()); }}
+          className="border-b border-warn-line bg-warn-soft px-4 py-2 text-left text-[13px] font-medium text-warn">
+          Click here to start the microphone. The browser needs one click before it lets a page record audio.
+        </button>
+      )}
+      {live && !needsClick && Date.now() - lastSound.current > 5000 && (
+        <div className="border-b border-line bg-warn-soft px-4 py-1.5 text-xs2 text-warn">No sound from the microphone. Check that the right microphone is selected and not muted.</div>
+      )}
+      {live && stage.hint && <div className="border-b border-line bg-bg px-4 py-1.5 text-xs2 text-fg-2">{stage.hint}</div>}
+      {(live || voice.length > 0) && c.mode !== "suspect_recording" && <LiveVoice readings={voice} live={!!live} />}
       {!live && c.recordings.length > 0 && (
         <CallAudio ref={player} recordings={c.recordings} segments={c.segments} onTime={setPlayT}
           marks={c.fields.flatMap((f) => f.evidence.map((e) => ({ t: e.t_start, label: `${LABELS[f.name] || f.label}: ${f.display}` })))} />

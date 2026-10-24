@@ -95,20 +95,24 @@ HOTWORDS = ("UPI PhonePe Paytm GooglePay GPay SBI HDFC ICICI Axis Kotak PNB OTP 
             "lakh hazaar rupaye account number transfer at the rate okaxis ybl")
 
 
-def _clean_segments(segs, offset: float, hotwords: str) -> list[dict]:
+def _clean_segments(segs, offset: float, hotwords: str, stats: dict | None = None) -> list[dict]:
     """Drop typical Whisper hallucinations: text on silence, prompt echoes, looping text."""
     hw = set(hotwords.lower().split())
     out = []
+    drop = (stats or {}).setdefault("dropped", {}) if stats is not None else {}
     for s in segs:
         text = s.text.strip()
         if not text:
             continue
         words = text.lower().replace(",", " ").split()
         if s.no_speech_prob > 0.6 and s.avg_logprob < -0.7:
+            drop["no_speech"] = drop.get("no_speech", 0) + 1
             continue
         if getattr(s, "compression_ratio", 1.0) > 2.4:
+            drop["repetitive"] = drop.get("repetitive", 0) + 1
             continue
         if len(words) >= 4 and sum(w in hw for w in words) / len(words) > 0.6:
+            drop["hotword_echo"] = drop.get("hotword_echo", 0) + 1
             continue  # echo of the vocabulary hint
         out.append({
             "start": round(s.start + offset, 2), "end": round(s.end + offset, 2), "text": text,
@@ -121,6 +125,7 @@ def _clean_segments(segs, offset: float, hotwords: str) -> list[dict]:
 
 class ASR(_Lazy):
     name = "asr"
+    last_stats: dict = {}
     license = "MIT (faster-whisper, Whisper weights)"
 
     def _load(self):  # pragma: no cover
@@ -157,9 +162,18 @@ class ASR(_Lazy):
             segs, info = m.transcribe(audio, hotwords=HOTWORDS, **kwargs)
         except TypeError:  # pragma: no cover - older faster-whisper
             segs, info = m.transcribe(audio, **kwargs)
-        out = _clean_segments(list(segs), offset, HOTWORDS)
+        raw = list(segs)
+        stats: dict = {"raw": len(raw), "lang": getattr(info, "language", lang),
+                       "speech_s": round(float(getattr(info, "duration_after_vad", 0) or 0), 1)}
+        out = _clean_segments(raw, offset, HOTWORDS, stats)
         prev = previous_text.strip().lower()
-        out = [s for s in out if not prev or s["text"].strip().lower() not in prev]  # prompt echo
+        before = len(out)
+        # prompt echo: only whole repeats of an earlier line (short real replies like "haan ji" are kept)
+        out = [s for s in out if not prev or len(s["text"]) < 12 or s["text"].strip().lower() not in prev]
+        if before - len(out):
+            stats.setdefault("dropped", {})["prompt_echo"] = before - len(out)
+        stats["kept"] = len(out)
+        self.last_stats = stats
         for s in out:
             s["text_native"] = s["text"]
             s["text"] = to_roman(s["text"])
