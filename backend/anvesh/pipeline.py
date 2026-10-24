@@ -80,7 +80,7 @@ def ingest_audio(db: Session, case: Case, data: bytes, filename: str, mime: str,
     path = storage.save(digest, data)
     rec = Recording(id=new_id("RC"), case_id=case.id, kind=kind, filename=filename, mime=mime or "audio/wav",
                     sha256=digest, size_bytes=len(data), stored_path=path, duration=round(len(x) / A.SR, 2),
-                    speaker_embedding=res.get("embedding"))
+                    speaker_embedding=res.get("embedding"), offset=round(offset, 3))
     db.add(rec)
     db.flush()
     audit.record(db, actor, "recording.ingested", case.id,

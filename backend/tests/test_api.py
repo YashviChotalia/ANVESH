@@ -92,3 +92,10 @@ def test_upload_without_asr_fails_clearly():
     c = _new()
     r = client.post(f"/api/cases/{c['id']}/recordings", files={"file": ("a.wav", b"RIFF0000WAVE", "audio/wav")})
     assert r.status_code == 503 and "Speech-to-text" in r.json()["detail"]
+
+
+def test_radar_groups_by_scam_type():
+    c = _new(district="Thane")
+    _say(c["id"], "bijli wale ne bola light connection kat jayega, 5000 rupaye bheje")
+    r = client.get("/api/radar").json()
+    assert any(g["key"] == "utility" and g["last_24h"] >= 1 and "Thane" in g["districts"] for g in r["groups"])

@@ -65,6 +65,7 @@ class Recording(Base):
     duration: Mapped[float | None] = mapped_column(Float, nullable=True)
     stored_path: Mapped[str] = mapped_column(String(512))
     speaker_embedding: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    offset: Mapped[float] = mapped_column(Float, default=0.0)  # where this audio starts on the case timeline (s)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     case: Mapped[Case] = relationship(back_populates="recordings")
 
@@ -155,6 +156,24 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
 
 def init_db() -> None:
     Base.metadata.create_all(engine)
+    _add_missing_columns()
+
+
+def _add_missing_columns() -> None:
+    """Tiny forward-only migration: add columns introduced after a database was created."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            have = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name not in have:
+                    ddl = col.type.compile(dialect=engine.dialect)
+                    default = col.default.arg if col.default is not None and not callable(col.default.arg) else None
+                    extra = f" DEFAULT {default!r}" if isinstance(default, (int, float)) else ""
+                    conn.execute(text(f'ALTER TABLE {table.name} ADD COLUMN "{col.name}" {ddl}{extra}'))
 
 
 def dumps(obj) -> str:

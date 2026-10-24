@@ -104,7 +104,7 @@ def case_detail(db: Session, case: Case) -> dict:
         "triage": case.triage, "distress": case.distress, "safety": case.safety, "tactics": case.tactics,
         "copilot": case.copilot,
         "recordings": [{"id": r.id, "kind": r.kind, "filename": r.filename, "sha256": r.sha256,
-                        "duration": r.duration, "size_bytes": r.size_bytes,
+                        "duration": r.duration, "size_bytes": r.size_bytes, "offset": r.offset or 0.0,
                         "has_voiceprint": bool(r.speaker_embedding)} for r in case.recordings],
         "links": [{"id": l.id, "kind": l.kind, "score": l.score, "status": l.status, "detail": l.detail,
                    "other": case_summary(others[o]) if (o := (l.case_b if l.case_a == case.id else l.case_a)) in others else {"id": o}}
@@ -417,6 +417,28 @@ def audit_verify(db: Session = Depends(db_session), who: str = Depends(actor)):
     return audit.verify(db)
 
 
+@app.get("/api/radar")
+def radar(days: int = 7, db: Session = Depends(db_session), who: str = Depends(actor)):
+    """Campaign radar: which scam types are rising, where. Counts complaints, not verified crimes."""
+    now = utcnow()
+    since = now - timedelta(days=days)
+    cases = [c for c in db.execute(select(Case).where(Case.created_at >= since)).scalars() if c.mode != "suspect_recording"]
+    out = []
+    for key in {c.playbook_key or "other" for c in cases}:
+        group = [c for c in cases if (c.playbook_key or "other") == key]
+        last24 = [c for c in group if c.created_at >= now - timedelta(hours=24)]
+        prior_daily = (len(group) - len(last24)) / max(days - 1, 1)
+        pb = playbooks.PLAYBOOK_BY_KEY.get(key)
+        out.append({
+            "key": key, "label": pb.label if pb else "Type unclear", "last_24h": len(last24), "last_period": len(group),
+            "prior_daily_avg": round(prior_daily, 2), "rising": len(last24) >= 2 and len(last24) > 2 * prior_daily,
+            "districts": sorted({c.district for c in group if c.district}),
+            "reported_loss": sum(_amount(c) for c in group),
+        })
+    out.sort(key=lambda r: (-r["last_24h"], -r["last_period"]))
+    return {"days": days, "groups": out}
+
+
 @app.get("/api/playbooks")
 def list_playbooks(who: str = Depends(actor)):
     return [{"key": p.key, "label": p.label, "required": list(p.required), "advice": p.advice}
@@ -476,8 +498,11 @@ async def live(ws: WebSocket, case_id: str, token: str | None = None, operator: 
             pipeline.process(db, case, who)
             if final and full:
                 wav = A.to_wav_bytes(A.pcm16_to_float(bytes(full)))
-                pipeline.ingest_audio(db, case, wav, f"live-{case.id}.wav", "audio/wav", "call", who,
-                                      start_offset, precomputed={})
+                rec = pipeline.ingest_audio(db, case, wav, f"live-{case.id}.wav", "audio/wav", "call", who,
+                                            start_offset, precomputed={})
+                for sg in case.segments:  # tie this session's lines to the saved audio for playback
+                    if sg.recording_id is None and sg.start >= start_offset - 0.01:
+                        sg.recording_id = rec.id
                 db.flush()
                 db.refresh(case)
             db.commit()

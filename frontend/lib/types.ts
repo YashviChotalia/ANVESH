@@ -37,7 +37,7 @@ export interface LinkT {
   id: number; kind: "identifier" | "script" | "voice"; score: number; status: "candidate" | "confirmed" | "rejected";
   detail: { reason?: string; type?: string; value?: string; method?: string }; other: CaseSummary;
 }
-export interface Recording { id: string; kind: string; filename: string; sha256: string; duration?: number | null; size_bytes: number; has_voiceprint: boolean }
+export interface Recording { id: string; kind: string; filename: string; sha256: string; duration?: number | null; size_bytes: number; has_voiceprint: boolean; offset?: number }
 export interface CaseDetail extends CaseSummary {
   call_started_at: string; segments: SegmentT[]; fields: CaseField[]; triage: Triage; distress: Distress;
   safety: Safety; tactics: { items?: { key: string; label: string; cues: string[] }[]; note?: string };

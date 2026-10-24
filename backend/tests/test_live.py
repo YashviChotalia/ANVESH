@@ -45,3 +45,7 @@ def test_live_session_transcribes_scores_voice_and_saves_evidence(monkeypatch):
     assert c["distress"]["enabled"] and c["distress"]["timeline"], "voice windows should be scored"
     assert any(p["label"] == "fearful" for p in c["distress"]["timeline"])
     assert c["recordings"] and len(c["recordings"][0]["sha256"]) == 64  # live audio saved as hashed evidence
+    rec = c["recordings"][0]
+    assert all(s["recording_id"] == rec["id"] for s in c["segments"])  # lines are playable from the saved audio
+    audio = client.get(f"/api/recordings/{rec['id']}/audio")
+    assert audio.status_code == 200 and audio.content[:4] == b"RIFF"

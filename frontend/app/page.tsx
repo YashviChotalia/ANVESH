@@ -12,12 +12,14 @@ import { ago, inr, inrShort, MODE_LABEL } from "@/lib/format";
 import type { CaseSummary, Ring, Stats } from "@/lib/types";
 
 type Filter = "all" | "IMMEDIATE" | "safety" | "linked";
+interface RadarGroup { key: string; label: string; last_24h: number; last_period: number; rising: boolean; districts: string[]; reported_loss: number }
 
 export default function Queue() {
   const router = useRouter();
   const [cases, setCases] = useState<CaseSummary[] | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [rings, setRings] = useState<Ring[]>([]);
+  const [radar, setRadar] = useState<RadarGroup[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
 
@@ -25,11 +27,12 @@ export default function Queue() {
     let alive = true;
     const load = async () => {
       try {
-        const [c, s, g] = await Promise.all([
+        const [c, s, g, rd] = await Promise.all([
           api.get<CaseSummary[]>("/api/cases"), api.get<Stats>("/api/stats"), api.get<{ rings: Ring[] }>("/api/graph"),
+          api.get<{ groups: RadarGroup[] }>("/api/radar?days=7"),
         ]);
         if (!alive) return;
-        setCases(c); setStats(s); setRings(g.rings.filter((r) => r.size >= 2)); setErr(null);
+        setCases(c); setStats(s); setRings(g.rings.filter((r) => r.size >= 2)); setRadar(rd.groups); setErr(null);
       } catch (e: any) { if (alive) setErr(e.message || "Could not load cases"); }
     };
     load();
@@ -122,6 +125,25 @@ export default function Queue() {
             )}
           </section>
 
+          <div className="space-y-5">
+          <section className="panel h-fit">
+            <header className="panel-h"><h3 className="panel-t">Scam trends · 7 days</h3><span className="text-xs2 text-fg-3">24 h / 7 d</span></header>
+            {radar.length === 0 ? <Empty title="No complaints in the last 7 days" /> : (
+              <table className="w-full text-[13px]">
+                <tbody>
+                  {radar.map((g) => (
+                    <tr key={g.key}>
+                      <td className="td pl-4">
+                        <div className="flex items-center gap-1.5 text-fg">{g.label}{g.rising && <Tag tone="warn">Rising</Tag>}</div>
+                        <div className="truncate text-xs2 text-fg-3">{g.districts.join(", ") || "—"}</div>
+                      </td>
+                      <td className="td whitespace-nowrap pr-4 text-right tabular-nums"><b className="font-semibold">{g.last_24h}</b><span className="text-fg-3"> / {g.last_period}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
           <section className="panel h-fit">
             <header className="panel-h"><h3 className="panel-t">Linked groups</h3><Link href="/rings" className="text-xs2 font-medium text-accent hover:underline">View graph</Link></header>
             {rings.length === 0 ? <Empty title="No linked cases" body="Cases are linked when they share an identifier, scam script or suspect voice." /> : (
@@ -141,6 +163,7 @@ export default function Queue() {
               </ul>
             )}
           </section>
+          </div>
         </div>
       </div>
     </>
