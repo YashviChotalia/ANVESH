@@ -12,3 +12,4 @@ data/
 *.db-wal
 *.db-shm
 .dev_data_key
+logs/

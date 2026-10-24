@@ -1,0 +1,2 @@
+# Only needed when ANVESH_DB_URL points at PostgreSQL (docker compose)
+psycopg[binary]>=3.2,<4

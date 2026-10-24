@@ -66,13 +66,18 @@ A missing model is reported, never simulated.
 
 ## Quick start (laptop)
 
+**Windows, one click:** double-click `setup.bat` once (installs everything, runs the tests, loads demo data),
+then `start.bat` to launch. Logs go to `logs\` (`setup.log`, `backend.log`, `frontend.log`).
+
+**Manual setup**
+
 **Backend** (Python 3.10–3.12)
 
 ```bash
 cd backend
 python -m venv .venv && source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
-pip install -r requirements-ml.txt                         # speech models (CPU is fine; downloads on first use)
+pip install -r requirements-ml.txt                         # speech models, installed separately (CPU is fine)
 python -m anvesh.seed --reset                              # optional: SYNTHETIC demo cases for the Ring Linker
 uvicorn anvesh.api:app --port 8000
 ```
