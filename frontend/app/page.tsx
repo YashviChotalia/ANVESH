@@ -6,43 +6,36 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { TopBar } from "@/components/Shell";
-import { Empty, ErrorNote, n, PriorityLabel, Tag } from "@/components/ui";
+import { Empty, ErrorNote, PriorityLabel, Tag } from "@/components/ui";
 import { api } from "@/lib/api";
 import { ago, inr, inrShort, MODE_LABEL } from "@/lib/format";
-import type { CaseSummary, OfficialSummary, Ring, Stats } from "@/lib/types";
-import { useWorkspace, wsParam } from "@/lib/workspace";
+import type { CaseSummary, Ring, Stats } from "@/lib/types";
 
 type Filter = "all" | "IMMEDIATE" | "safety" | "linked";
-interface RadarGroup { key: string; label: string; last_24h: number; last_period: number; rising: boolean; districts: string[]; reported_loss: number }
 
 export default function Queue() {
   const router = useRouter();
   const [cases, setCases] = useState<CaseSummary[] | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [rings, setRings] = useState<Ring[]>([]);
-  const [radar, setRadar] = useState<RadarGroup[]>([]);
-  const [official, setOfficial] = useState<OfficialSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
-  const [ws, setWs] = useWorkspace();
 
   useEffect(() => {
     let alive = true;
     const load = async () => {
       try {
-        const [c, s, g, rd] = await Promise.all([
-          api.get<CaseSummary[]>(`/api/cases${wsParam(ws)}`), api.get<Stats>(`/api/stats${wsParam(ws)}`),
-          api.get<{ rings: Ring[] }>(`/api/graph${wsParam(ws)}`), api.get<{ groups: RadarGroup[] }>(`/api/radar?days=7${wsParam(ws, "&")}`),
+        const [c, s, g] = await Promise.all([
+          api.get<CaseSummary[]>("/api/cases"), api.get<Stats>("/api/stats"), api.get<{ rings: Ring[] }>("/api/graph"),
         ]);
         if (!alive) return;
-        setCases(c); setStats(s); setRings(g.rings.filter((r) => r.size >= 2)); setRadar(rd.groups); setErr(null);
+        setCases(c); setStats(s); setRings(g.rings.filter((r) => r.size >= 2)); setErr(null);
       } catch (e: any) { if (alive) setErr(e.message || "Could not load cases"); }
     };
     load();
-    api.get<OfficialSummary>("/api/official").then((o) => alive && setOfficial(o)).catch(() => {});
     const t = setInterval(load, 8000);
     return () => { alive = false; clearInterval(t); };
-  }, [ws]);
+  }, []);
 
   const ringOf = (id: string) => rings.find((r) => r.cases.includes(id));
   const open = (cases || []).filter((c) => c.status !== "closed");
@@ -60,17 +53,15 @@ export default function Queue() {
       <TopBar title="Case queue" right={<Link href="/intake" className="btn-primary"><Plus size={14} /> New intake</Link>} />
       <div className="space-y-5 p-6">
         {err && <ErrorNote msg={err} />}
-        {official && <NationalStrip o={official} />}
-        {ws === "training" && (
-          <div className="rounded border border-warn-line bg-warn-soft px-4 py-2 text-xs2 text-warn">
-            <span className="font-semibold">Training workspace.</span> Scripted scenarios for practice and demos, not real complaints.
-            They never mix with live cases or their links. Scam types and places come from official Chakshu and NCRB data; numbers and UPI handles are placeholders.
+        {open.some((c) => c.synthetic) && (
+          <div className="rounded border border-line bg-surface px-4 py-2 text-xs2 text-fg-2">
+            This queue includes <span className="font-medium text-fg">synthetic demo cases</span> (marked “synthetic” in the caller name). Names, numbers and UPI IDs are invented.
           </div>
         )}
 
         <div className="panel grid grid-cols-2 divide-x divide-line md:grid-cols-5">
           <Metric label="Open cases" value={stats?.open_cases} />
-          <Metric label="Immediate review" value={stats?.immediate} tone={stats?.immediate ? "crit" : undefined} />
+          <Metric label="Immediate review" value={stats?.immediate} tone="crit" />
           <Metric label="Safety alerts" value={stats?.safety_alerts} tone={stats?.safety_alerts ? "crit" : undefined} />
           <Metric label="Linked groups" value={stats?.rings} sub={stats ? `${stats.linked_cases} cases` : undefined} />
           <Metric label="Reported loss (open)" value={stats ? inrShort(stats.reported_loss) : undefined} sub="As reported by callers" />
@@ -82,24 +73,13 @@ export default function Queue() {
               {([["all", "All open"], ["IMMEDIATE", "Immediate"], ["safety", "Safety alerts"], ["linked", "Linked"]] as const).map(([k, l]) => (
                 <button key={k} onClick={() => setFilter(k)}
                   className={clsx("-mb-px flex h-10 items-center gap-1.5 border-b-2 px-2.5 text-[13px] font-medium",
-                    filter === k ? "border-brand text-fg" : "border-transparent text-fg-3 hover:text-fg")}>
+                    filter === k ? "border-fg text-fg" : "border-transparent text-fg-3 hover:text-fg")}>
                   {l}<span className="rounded bg-bg px-1.5 text-xs2 text-fg-3">{counts[k]}</span>
                 </button>
               ))}
             </div>
             {cases === null ? (
               <div className="space-y-px p-3">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-10 animate-pulse rounded bg-bg" />)}</div>
-            ) : open.length === 0 && ws === "live" ? (
-              <div className="px-6 py-12 text-center">
-                <div className="text-[15px] font-semibold text-fg">No live cases yet</div>
-                <p className="mx-auto mt-1 max-w-[520px] text-[13px] text-fg-2">
-                  This queue only shows real calls taken here. Start an intake to take a call, or open the training workspace to practise on scripted scenarios.
-                </p>
-                <div className="mt-4 flex justify-center gap-2">
-                  <Link href="/intake" className="btn-primary"><Plus size={14} /> New intake</Link>
-                  {(stats?.training_available ?? 0) > 0 && <button onClick={() => setWs("training")} className="btn-secondary">Open training workspace</button>}
-                </div>
-              </div>
             ) : shown.length === 0 ? (
               <Empty title="No cases in this view" />
             ) : (
@@ -142,25 +122,6 @@ export default function Queue() {
             )}
           </section>
 
-          <div className="space-y-5">
-          <section className="panel h-fit">
-            <header className="panel-h"><h3 className="panel-t">Scam trends · 7 days</h3><span className="text-xs2 text-fg-3">24 h / 7 d</span></header>
-            {radar.length === 0 ? <Empty title="No complaints in the last 7 days" /> : (
-              <table className="w-full text-[13px]">
-                <tbody>
-                  {radar.map((g) => (
-                    <tr key={g.key}>
-                      <td className="td pl-4">
-                        <div className="flex items-center gap-1.5 text-fg">{g.label}{g.rising && <Tag tone="warn">Rising</Tag>}</div>
-                        <div className="truncate text-xs2 text-fg-3">{g.districts.join(", ") || "—"}</div>
-                      </td>
-                      <td className="td whitespace-nowrap pr-4 text-right tabular-nums"><b className="font-semibold">{g.last_24h}</b><span className="text-fg-3"> / {g.last_period}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </section>
           <section className="panel h-fit">
             <header className="panel-h"><h3 className="panel-t">Linked groups</h3><Link href="/rings" className="text-xs2 font-medium text-accent hover:underline">View graph</Link></header>
             {rings.length === 0 ? <Empty title="No linked cases" body="Cases are linked when they share an identifier, scam script or suspect voice." /> : (
@@ -180,7 +141,6 @@ export default function Queue() {
               </ul>
             )}
           </section>
-          </div>
         </div>
       </div>
     </>
@@ -194,18 +154,5 @@ function Metric({ label, value, sub, tone }: { label: string; value?: number | s
       <div className={clsx("mt-1 text-[22px] font-semibold leading-7 tabular-nums", tone === "crit" ? "text-crit" : "text-fg")}>{value ?? "–"}</div>
       {sub && <div className="text-xs2 text-fg-3">{sub}</div>}
     </div>
-  );
-}
-
-function NationalStrip({ o }: { o: OfficialSummary }) {
-  const h = o.headline;
-  return (
-    <Link href="/insights" className="panel group flex flex-wrap items-center gap-x-8 gap-y-2 px-4 py-2.5 text-[13px] hover:border-line2">
-      <span className="text-xs2 font-medium uppercase tracking-wide text-fg-3">India, official</span>
-      <span><b className="font-semibold tabular-nums">{n(h.cyber_crimes_2023)}</b> <span className="text-fg-2">cyber crimes in 2023</span> <span className="text-fg-3">(+{h.growth_2022_2023_pct}%)</span></span>
-      <span><b className="font-semibold tabular-nums">{(h.ncrp_complaints_latest / 1e5).toFixed(1)} lakh</b> <span className="text-fg-2">fraud complaints in {h.ncrp_year_latest}</span></span>
-      <span><b className="font-semibold tabular-nums">₹{n(h.ncrp_amount_crore_latest)} Cr</b> <span className="text-fg-2">reported lost</span></span>
-      <span className="ml-auto text-xs2 text-fg-3 group-hover:text-brand-700">NCRB · I4C · DoT →</span>
-    </Link>
   );
 }

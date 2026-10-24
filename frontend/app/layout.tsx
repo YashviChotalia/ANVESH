@@ -5,7 +5,7 @@ import { Shell } from "@/components/Shell";
 export const metadata: Metadata = {
   title: "Anvesh",
   description: "Turns cybercrime calls into evidence-linked case files and links them into fraud rings.",
-  icons: { icon: "/favicon.png", apple: "/brand/anvesh-mark.png" },
+  icons: { icon: "/favicon.svg" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

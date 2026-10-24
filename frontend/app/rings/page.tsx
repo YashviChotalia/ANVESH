@@ -8,7 +8,6 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { TopBar } from "@/components/Shell";
 import { Empty, Tag } from "@/components/ui";
 import { api } from "@/lib/api";
-import { useWorkspace, wsParam } from "@/lib/workspace";
 import { inr, inrShort, MODE_LABEL } from "@/lib/format";
 import type { CaseSummary, Ring } from "@/lib/types";
 
@@ -36,8 +35,7 @@ function Rings() {
   const [pairs, setPairs] = useState<Map<string, Edge[]>>(new Map());
   const W = 880, H = 540;
 
-  const [ws] = useWorkspace();
-  useEffect(() => { api.get<{ nodes: CaseSummary[]; edges: Edge[]; rings: Ring[] }>(`/api/graph${wsParam(ws)}`).then(setData); }, [ws]);
+  useEffect(() => { api.get<{ nodes: CaseSummary[]; edges: Edge[]; rings: Ring[] }>("/api/graph").then(setData); }, []);
 
   useEffect(() => {
     if (!data) return;
@@ -145,7 +143,7 @@ function Rings() {
                     <div className="mt-0.5 text-xs2 text-fg-3">{r.size} cases · {r.districts.join(", ")}</div>
                     <div className="mt-1.5 flex flex-wrap gap-1">
                       {r.link_kinds.map((k) => <Tag key={k}>{KIND[k as keyof typeof KIND].label}</Tag>)}
-                      {r.synthetic && <Tag title="Linked training scenarios">Training</Tag>}
+                      {r.synthetic && <Tag>Demo</Tag>}
                     </div>
                     {r.shared_identifiers.length > 0 && <div className="mono mt-1.5 text-[11.5px] text-fg-2">{r.shared_identifiers.join(", ")}</div>}
                     <div className="mt-1 text-xs2 text-fg-3">{r.confirmed} confirmed, {r.candidates} pending review</div>
