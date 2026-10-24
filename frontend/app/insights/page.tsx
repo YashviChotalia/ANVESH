@@ -9,13 +9,13 @@ import { api } from "@/lib/api";
 import type { OfficialSummary, SourceRef } from "@/lib/types";
 
 const PLAYBOOK_LABEL: Record<string, string> = {
-  digital_arrest: "Digital arrest", investment: "Investment", kyc_update: "KYC / payment", job: "Job / loan", sextortion: "Sextortion",
+  digital_arrest: "Digital arrest", investment: "Investment scam", kyc_update: "KYC / bank", job: "Job / loan", sextortion: "Sextortion",
 };
 
 export default function Insights() {
   const [d, setD] = useState<OfficialSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [stateSort, setStateSort] = useState<"cases_2023" | "rate_2023" | "chargesheet_rate_2023">("cases_2023");
+  const [stateSort, setStateSort] = useState<"cases_2023" | "rate_2023" | "fraud_share_2023_pct" | "chargesheet_rate_2023">("cases_2023");
 
   useEffect(() => { api.get<OfficialSummary>("/api/official").then(setD).catch((e) => setErr(e.message)); }, []);
 
@@ -25,90 +25,96 @@ export default function Insights() {
   const h = d.headline;
   const src = (k: string) => d.sources.filter((s) => s.key === k);
   const states = [...d.states].sort((a, b) => ((b[stateSort] ?? -1) as number) - ((a[stateSort] ?? -1) as number));
+  const impersonation = d.scam_types.filter((s) => s.playbook === "digital_arrest").reduce((a, s) => a + s.y2025, 0);
+  const impersonation24 = d.scam_types.filter((s) => s.playbook === "digital_arrest").reduce((a, s) => a + s.y2024, 0);
 
   return (
     <>
-      <TopBar title="National data" right={<span className="flex items-center gap-1.5 text-xs2 text-fg-3"><ShieldCheck size={14} className="text-ok" /> Official files, hash-verified</span>} />
+      <TopBar title="National data" right={<span className="flex items-center gap-1.5 text-xs2 text-fg-3"><ShieldCheck size={14} className="text-ok" /> Official government data, verified</span>} />
       <div className="space-y-5 p-6">
-        <p className="max-w-[880px] text-[13px] leading-5 text-fg-2">
-          Published statistics from the National Crime Records Bureau, the Indian Cybercrime Coordination Centre (via Parliament answers)
-          and the Department of Telecommunications&apos; Chakshu facility. Each file is an unmodified copy of the one on data.gov.in; Anvesh checks
-          its SHA-256 and that published totals add up before showing a number.
+        <p className="max-w-[860px] text-[13px] leading-5 text-fg-2">
+          The scale of call-led cyber fraud that helpline officers handle, from NCRB, the Indian Cybercrime Coordination Centre (I4C)
+          and the Department of Telecommunications. Every figure links to its source.
         </p>
 
         <div className="panel grid grid-cols-2 divide-x divide-line lg:grid-cols-4">
-          <Hero label="Cyber crimes registered, 2023" value={n(h.cyber_crimes_2023)} sub={`+${h.growth_2022_2023_pct}% on 2022 · ${h.growth_2019_2023_x}× 2019`} src="NCRB" />
-          <Hero label="With fraud as the motive" value={`${h.fraud_share_2023_pct}%`} sub={`Chargesheeting rate ${h.chargesheet_rate_2023}%`} src="NCRB" />
-          <Hero label={`Financial fraud complaints, ${h.ncrp_year_latest}`} value={lakh(h.ncrp_complaints_latest)} sub={`${h.ncrp_complaints_growth_x}× ${d.ncrp[0].year}`} src="I4C · NCRP" />
-          <Hero label={`Amount reported lost, ${h.ncrp_year_latest}`} value={`₹${n(h.ncrp_amount_crore_latest)} Cr`} sub={`₹${n(h.ncrp_amount_crore_prev)} Cr in ${h.ncrp_year_prev}`} src="I4C · CFCFRMS" />
+          <Hero label={`Financial fraud complaints, ${h.ncrp_year_latest}`} value={lakh(h.ncrp_complaints_latest)} sub={`${h.ncrp_complaints_growth_x}× ${d.ncrp[0].year} · NCRP and 1930`} src="I4C" />
+          <Hero label={`Money reported lost, ${h.ncrp_year_latest}`} value={`₹${n(h.ncrp_amount_crore_latest)} Cr`} sub={`₹${n(h.ncrp_amount_total_crore)} Cr since ${d.ncrp[0].year}`} src="I4C" />
+          <Hero label="Fake police, CBI, customs or DoT officials, 2025" value={n(impersonation)} sub={`reports · ${n(impersonation24)} in 2024 · the "digital arrest" script`} src="DoT Chakshu" />
+          <Hero label="Cyber crime cases chargesheeted, 2023" value={`${h.chargesheet_rate_2023}%`} sub={`of ${n(h.cyber_crimes_2023)} cases · ${h.fraud_share_2023_pct}% were fraud`} src="NCRB" />
         </div>
 
         <div className="grid gap-5 xl:grid-cols-2">
-          <Card title="Cyber crimes registered, India" sources={src("crime_heads")}>
-            <Columns data={d.trend.map((t) => ({ label: String(t.year), value: t.cases }))} fmt={n} />
+          <Card title="Financial fraud complaints by year" sources={src("ncrp_fraud")}
+            note="Citizens' complaints to the National Cyber Crime Reporting Portal and the 1930 helpline. Far more are reported than become FIRs.">
+            <Columns data={d.ncrp.map((r) => ({ label: String(r.year), value: r.complaints }))} fmt={lakh} />
           </Card>
-          <Card title="Financial fraud complaints on NCRP" sources={src("ncrp_fraud")}
-            note="Complaints are not FIRs: far more frauds are reported to the 1930 helpline and portal than are registered as cases.">
-            <Columns data={d.ncrp.map((r) => ({ label: String(r.year), value: r.complaints, extra: `₹${n(r.amount_crore)} Cr reported` }))} fmt={lakh} />
+          <Card title="Money reported lost by year" sources={src("ncrp_fraud")} note="Amount reported by complainants, in ₹ crore.">
+            <Columns data={d.ncrp.map((r) => ({ label: String(r.year), value: r.amount_crore }))} fmt={(v) => `₹${n(v)} Cr`} />
           </Card>
         </div>
 
-        <Card title="Suspected fraud communications by scam type" sources={src("chakshu")}
-          right={<span className="text-xs2 text-fg-3">Reports in 2025 · {n(d.scam_types_total["2025"])} total</span>}
-          note="Reported by citizens through Chakshu (Sanchar Saathi). The tag shows the Anvesh playbook that recognises this script in a call.">
+        <Card title="Fraud calls and messages reported by citizens, 2025" sources={src("chakshu")}
+          right={<span className="text-xs2 text-fg-3">{n(d.scam_types_total["2025"])} reports</span>}
+          note="Reported through Chakshu (Sanchar Saathi). The orange tag is the Anvesh playbook that recognises this script during a call.">
           <Bars rows={d.scam_types.map((s) => ({
             label: s.category, value: s.y2025, right: `${s.share_2025_pct}%`,
             tag: s.playbook ? PLAYBOOK_LABEL[s.playbook] : undefined, sub: `${n(s.y2024)} in 2024`,
           }))} />
         </Card>
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-          <Card title="States and UTs, 2023" pad={false} sources={[...src("state_cyber"), ...src("state_motives")]}
+        <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+          <Card title="Where cyber crime is registered, 2023" pad={false} sources={[...src("state_cyber"), ...src("state_motives")]}
             right={
               <div className="flex gap-1 text-xs2">
-                {([["cases_2023", "Cases"], ["rate_2023", "Rate"], ["chargesheet_rate_2023", "Chargesheet"]] as const).map(([k, l]) => (
+                {([["cases_2023", "Cases"], ["rate_2023", "Rate"], ["fraud_share_2023_pct", "Fraud share"], ["chargesheet_rate_2023", "Chargesheet"]] as const).map(([k, l]) => (
                   <button key={k} onClick={() => setStateSort(k)}
                     className={clsx("rounded px-2 py-1 font-medium", stateSort === k ? "bg-brand-soft text-brand-700" : "text-fg-3 hover:bg-bg hover:text-fg")}>{l}</button>
                 ))}
-              </div>}>
-            <div className="max-h-[868px] overflow-auto scroll-thin">
-              <table className="w-full border-collapse text-[13px]">
-                <thead className="sticky top-0 bg-surface">
-                  <tr>
-                    <th className="th pl-4">State / UT</th><th className="th text-right">2021</th><th className="th text-right">2022</th>
-                    <th className="th text-right">2023</th><th className="th text-right">Rate / lakh</th><th className="th text-right">Fraud share</th>
-                    <th className="th pr-4 text-right">Chargesheet</th>
+              </div>}
+            note={`All ${d.states.length} states and UTs. Rate is cases per lakh population. NCRB advises against ranking states on crime figures alone.`}>
+            <div className="max-h-[720px] overflow-auto scroll-thin">
+            <table className="w-full border-collapse text-[13px]">
+              <thead className="sticky top-0 bg-surface">
+                <tr>
+                  <th className="th pl-4">State / UT</th><th className="th text-right">2021</th><th className="th text-right">2022</th><th className="th text-right">2023</th>
+                  <th className="th text-right">Rate</th><th className="th text-right">Fraud share</th><th className="th pr-4 text-right">Chargesheeted</th>
+                </tr>
+              </thead>
+              <tbody className="tabular-nums">
+                {states.map((s) => (
+                  <tr key={s.name} className="hover:bg-bg">
+                    <td className="td pl-4 text-fg">{s.name}</td>
+                    <td className="td text-right text-fg-3">{n(s.cases_2021)}</td>
+                    <td className="td text-right text-fg-3">{n(s.cases_2022)}</td>
+                    <td className="td text-right font-medium">{n(s.cases_2023)}</td>
+                    <td className="td text-right">{s.rate_2023 ?? "—"}</td>
+                    <td className="td text-right">{s.fraud_share_2023_pct === null ? "—" : `${s.fraud_share_2023_pct}%`}</td>
+                    <td className="td pr-4 text-right">{s.chargesheet_rate_2023 === null ? "—" : `${s.chargesheet_rate_2023}%`}</td>
                   </tr>
-                </thead>
-                <tbody className="tabular-nums">
-                  {states.map((s) => (
-                    <tr key={s.name} className="hover:bg-bg">
-                      <td className="td pl-4 text-fg">{s.name}</td>
-                      <td className="td text-right text-fg-3">{n(s.cases_2021)}</td>
-                      <td className="td text-right text-fg-3">{n(s.cases_2022)}</td>
-                      <td className="td text-right font-medium">{n(s.cases_2023)}</td>
-                      <td className="td text-right">{s.rate_2023 ?? "—"}</td>
-                      <td className="td text-right">{s.fraud_share_2023_pct === null ? "—" : `${s.fraud_share_2023_pct}%`}</td>
-                      <td className="td pr-4 text-right">{s.chargesheet_rate_2023 === null ? "NA" : `${s.chargesheet_rate_2023}%`}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                ))}
+              </tbody>
+            </table>
             </div>
           </Card>
 
           <div className="space-y-5">
-            <Card title="Metropolitan cities, 2023" sources={src("city_motives")} note="Bars show all cyber crimes; the figure on the right is the share with a fraud motive.">
-              <Bars rows={d.cities.slice(0, 10).map((c) => ({ label: c.name, value: c.cases_2023, right: c.fraud_share_2023_pct === null ? "—" : `${c.fraud_share_2023_pct}%` }))} />
+            <Card title="Fraud cases in metropolitan cities, 2023" sources={src("city_motives")} note={`All ${d.cities.length} metropolitan cities. Bars show cases with a fraud motive; the figure on the right is their share of all cyber crime there.`}>
+              <Bars rows={[...d.cities].sort((a, b) => b.fraud_2023 - a.fraud_2023).map((c) => ({
+                label: c.name, value: c.fraud_2023, right: c.fraud_share_2023_pct === null ? "—" : `${c.fraud_share_2023_pct}%`,
+              }))} />
             </Card>
-            <Card title="Motives, India 2023" sources={src("state_motives")}>
-              <Bars rows={d.motives_2023.slice(0, 6).map((m) => ({ label: m.motive, value: m.cases, right: `${m.share_pct}%` }))} />
+            <Card title="Motives behind cyber crime, India 2023" sources={src("state_motives")}>
+              <Bars rows={d.motives_2023.map((m) => ({ label: m.motive, value: m.cases, right: `${m.share_pct}%` }))} />
+            </Card>
+            <Card title="Cyber crime cases registered in India" sources={src("crime_heads")}>
+              <Columns data={d.trend.map((t) => ({ label: String(t.year), value: t.cases, extra: `${n(t.fraud_ipc + t.cheating_ipc)} fraud and cheating (IPC)` }))} fmt={n} />
             </Card>
           </div>
         </div>
 
         <section className="panel">
-          <header className="panel-h"><h3 className="panel-t">Data sources</h3><span className="text-xs2 text-fg-3">Government Open Data License – India</span></header>
+          <header className="panel-h"><h3 className="panel-t">Sources</h3><span className="text-xs2 text-fg-3">Government Open Data License – India</span></header>
           <ul className="divide-y divide-line">
             {d.sources.map((s) => <SourceRow key={s.page} s={s} />)}
           </ul>

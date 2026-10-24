@@ -8,6 +8,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { TopBar } from "@/components/Shell";
 import { Empty, Tag } from "@/components/ui";
 import { api } from "@/lib/api";
+import { useWorkspace, wsParam } from "@/lib/workspace";
 import { inr, inrShort, MODE_LABEL } from "@/lib/format";
 import type { CaseSummary, Ring } from "@/lib/types";
 
@@ -33,38 +34,47 @@ function Rings() {
   const [hover, setHover] = useState<string | null>(null);
   const [nodes, setNodes] = useState<N[]>([]);
   const [pairs, setPairs] = useState<Map<string, Edge[]>>(new Map());
-  const W = 880, H = 540;
+  const W = 1000;
+  const [H, setH] = useState(540);
 
-  useEffect(() => { api.get<{ nodes: CaseSummary[]; edges: Edge[]; rings: Ring[] }>("/api/graph").then(setData); }, []);
+  const [ws] = useWorkspace();
+  useEffect(() => { api.get<{ nodes: CaseSummary[]; edges: Edge[]; rings: Ring[] }>(`/api/graph${wsParam(ws)}`).then(setData); }, [ws]);
 
   useEffect(() => {
     if (!data) return;
-    const comps = data.rings;
-    const cols = Math.max(1, Math.ceil(Math.sqrt(comps.length)));
-    const rows = Math.max(1, Math.ceil(comps.length / cols));
-    const cw = W / cols, ch = H / rows;
+    // Shelf-pack one cell per group; cell size grows with the group, so big groups get room.
+    const comps = (sel ? data.rings.filter((r) => r.id === sel) : data.rings).filter((r) => r.size >= 2);
+    const side = (n: number) => (sel ? W : Math.min(W, Math.max(230, 120 * Math.sqrt(n))));
+    let x = 0, y = 0, rowH = 0;
+    const cells = comps.map((ring) => {
+      const w = sel ? W : Math.min(W, side(ring.size) * (ring.size > 6 ? 1.6 : 1)), hh = sel ? Math.max(420, 70 * Math.sqrt(ring.size) * 2.4) : side(ring.size) * (ring.size > 6 ? 0.8 : 1);
+      if (x + w > W) { x = 0; y += rowH; rowH = 0; }
+      const c = { ring, x0: x, y0: y, w, h: hh };
+      x += w; rowH = Math.max(rowH, hh);
+      return c;
+    });
     const all: N[] = [];
-    comps.forEach((ring, i) => {
-      const x0 = cw * (i % cols), y0 = ch * Math.floor(i / cols);
-      const cx = x0 + cw / 2, cy = y0 + ch / 2;
+    cells.forEach(({ ring, x0, y0, w, h }) => {
+      const cx = x0 + w / 2, cy = y0 + h / 2;
       const ns: N[] = data.nodes.filter((n) => ring.cases.includes(n.id)).map((n) => ({ ...n }));
       const ls = data.edges.filter((e) => ring.cases.includes(e.source) && ring.cases.includes(e.target)).map((e) => ({ ...e }));
       const sim = forceSimulation(ns)
-        .force("link", forceLink<N, any>(ls).id((d) => d.id).distance(110).strength(0.5))
-        .force("charge", forceManyBody().strength(-650))
-        .force("x", forceX(cx).strength(0.08)).force("y", forceY(cy).strength(0.12))
-        .force("collide", forceCollide(58)).stop();
+        .force("link", forceLink<N, any>(ls).id((d) => d.id).distance(ring.size > 8 ? 60 : 90).strength(0.4))
+        .force("charge", forceManyBody().strength(ring.size > 8 ? -260 : -500))
+        .force("x", forceX(cx).strength(0.1)).force("y", forceY(cy).strength(0.12))
+        .force("collide", forceCollide(ring.size > 8 && !sel ? 30 : 48)).stop();
       for (let k = 0; k < 400; k++) sim.tick();
       ns.forEach((n) => {
-        n.x = Math.max(x0 + 60, Math.min(x0 + cw - 60, n.x || cx));
-        n.y = Math.max(y0 + 36, Math.min(y0 + ch - 48, n.y || cy));
+        n.x = Math.max(x0 + 40, Math.min(x0 + w - 40, n.x || cx));
+        n.y = Math.max(y0 + 28, Math.min(y0 + h - 40, n.y || cy));
       });
       all.push(...ns);
     });
+    setH(Math.max(240, y + rowH));
     const p = new Map<string, Edge[]>();
     data.edges.forEach((e) => { const k = [e.source, e.target].sort().join("|"); p.set(k, [...(p.get(k) || []), e]); });
     setNodes(all); setPairs(p);
-  }, [data]);
+  }, [data, sel]);
 
   const byId = useMemo(() => Object.fromEntries(nodes.map((n) => [n.id, n])), [nodes]);
   const ring = data?.rings.find((r) => r.id === sel) || null;
@@ -117,9 +127,9 @@ function Rings() {
                       ? <circle r={r} fill={NODE[n.priority]} stroke="#fff" strokeWidth="2" />
                       : <rect x={-r} y={-r} width={r * 2} height={r * 2} rx="3" fill="#fff" stroke={NODE[n.priority]} strokeWidth="2" />}
                     <text textAnchor="middle" y={r + 14} fontSize="11" fontWeight="600" fill="#101828" fontFamily="JetBrains Mono" stroke="#fff" strokeWidth="3" paintOrder="stroke">{n.id.split("-").at(-1)}</text>
-                    <text textAnchor="middle" y={r + 27} fontSize="10.5" fill="#667085" stroke="#fff" strokeWidth="3" paintOrder="stroke">
+                    {(sel || hover === n.id || (data?.rings.find((g) => g.cases.includes(n.id))?.size ?? 0) <= 10) && <text textAnchor="middle" y={r + 27} fontSize="10.5" fill="#667085" stroke="#fff" strokeWidth="3" paintOrder="stroke">
                       {[n.district, n.mode !== "victim" ? (n.mode === "suspect_recording" ? "recording" : "tip") : n.amount ? inrShort(n.amount) : null].filter(Boolean).join(" · ")}
-                    </text>
+                    </text>}
                     <title>{`${n.id} · ${MODE_LABEL[n.mode]} · ${n.playbook.label} · ${inr(n.amount)}`}</title>
                   </g>
                 );
@@ -143,7 +153,7 @@ function Rings() {
                     <div className="mt-0.5 text-xs2 text-fg-3">{r.size} cases · {r.districts.join(", ")}</div>
                     <div className="mt-1.5 flex flex-wrap gap-1">
                       {r.link_kinds.map((k) => <Tag key={k}>{KIND[k as keyof typeof KIND].label}</Tag>)}
-                      {r.synthetic && <Tag>Demo</Tag>}
+                      {r.synthetic && <Tag title="Linked training scenarios">Training</Tag>}
                     </div>
                     {r.shared_identifiers.length > 0 && <div className="mono mt-1.5 text-[11.5px] text-fg-2">{r.shared_identifiers.join(", ")}</div>}
                     <div className="mt-1 text-xs2 text-fg-3">{r.confirmed} confirmed, {r.candidates} pending review</div>

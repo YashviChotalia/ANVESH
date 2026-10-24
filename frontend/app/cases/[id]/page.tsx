@@ -1,16 +1,17 @@
 "use client";
 
 import clsx from "clsx";
-import { AlertTriangle, Check, FileText, Mic, Pencil, Play, Send, Square, Upload, Volume2, X } from "lucide-react";
+import { AlertTriangle, Check, FileText, Mic, Pencil, Play, RotateCcw, Send, Square, Upload, Volume2, X } from "lucide-react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CallAudio, type PlayerHandle } from "@/components/CallAudio";
 import { TopBar } from "@/components/Shell";
-import { Empty, ErrorNote, KV, Panel, PriorityBadge, StatusTag, Tag } from "@/components/ui";
+import { Empty, ErrorNote, KV, n, Panel, PriorityBadge, SourceNote, StatusTag, Tag } from "@/components/ui";
 import { api } from "@/lib/api";
 import { inr, MODE_LABEL, SPEAKER_LABEL, ts } from "@/lib/format";
 import { startLive, type LiveHandle } from "@/lib/live";
-import type { CaseDetail, CaseField, Evidence, LinkT, SegmentT } from "@/lib/types";
+import type { CaseDetail, CaseField, Evidence, Health, LinkT, SegmentT } from "@/lib/types";
 
 export default function CasePage() {
   return <Suspense fallback={<div className="p-6 text-fg-3">Loading case…</div>}><Workspace /></Suspense>;
@@ -31,32 +32,51 @@ function Workspace() {
   const [focus, setFocus] = useState<{ seg: string; s: number } | null>(null);
   const [report, setReport] = useState(false);
   const [readback, setReadback] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const audioCache = useRef<Record<string, string>>({});
+  const player = useRef<PlayerHandle>(null);
+  const [toasts, setToasts] = useState<{ id: number; tone: "crit" | "warn" | "accent" | "ok"; title: string; body?: string }[]>([]);
+  const prev = useRef<CaseDetail | null>(null);
 
-  const load = useCallback(() => api.get<CaseDetail>(`/api/cases/${id}`).then(setC).catch((e) => setErr(e.message)), [id]);
+  const load = useCallback(() => api.get<CaseDetail>(`/api/cases/${id}`).then((x) => { prev.current = x; setC(x); }).catch((e) => setErr(e.message)), [id]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!c?.processing) return;
+    const t = setInterval(load, 3000);
+    return () => clearInterval(t);
+  }, [c?.processing, load]);
 
-  const run = async (p: Promise<CaseDetail>) => {
-    try { setC(await p); setErr(null); } catch (e: any) { setErr(e.message); }
+  const toast = (t: { tone: "crit" | "warn" | "accent" | "ok"; title: string; body?: string }) => {
+    const tid = Date.now() + Math.random();
+    setToasts((xs) => [...xs.slice(-3), { id: tid, ...t }]);
+    setTimeout(() => setToasts((xs) => xs.filter((x) => x.id !== tid)), t.tone === "crit" ? 12000 : 6000);
   };
 
-  const playAt = async (ev: { segment_id: string; t_start: number; t_end: number; char_start: number }) => {
+  /** Live updates: compare with the previous state and raise in-call alerts. */
+  const onLive = (next: CaseDetail) => {
+    const p = prev.current;
+    if (p) {
+      if (next.safety?.crisis && !p.safety?.crisis) { toast({ tone: "crit", title: "Crisis language", body: next.safety.crisis_message || "" }); beep(); }
+      if (next.safety?.coercion && !p.safety?.coercion) { toast({ tone: "crit", title: "Possible active coercion", body: next.safety.coercion_message || "" }); beep(); }
+      if (next.priority === "IMMEDIATE" && p.priority !== "IMMEDIATE") toast({ tone: "crit", title: "Priority raised to Immediate", body: next.triage?.reasons?.[0] });
+      const before = new Set(p.links.map((l) => l.other.id));
+      const added = [...new Set(next.links.map((l) => l.other.id))].filter((x) => !before.has(x));
+      if (added.length) toast({ tone: "accent", title: `Linked to ${added.length} earlier case${added.length > 1 ? "s" : ""}`, body: next.links.find((l) => added.includes(l.other.id))?.detail.reason });
+      const had = new Set(p.fields.map((f) => f.name));
+      next.fields.filter((f) => !had.has(f.name)).forEach((f) => toast({ tone: "ok", title: `Captured: ${LABELS[f.name] || f.label}`, body: f.display }));
+      const pd = p.distress?.level, nd = next.distress?.level;
+      if (nd === "high" && pd !== "high") toast({ tone: "warn", title: "Caller distress is high", body: "Consider slowing down and reassuring the caller." });
+    }
+    prev.current = next;
+    setC(next);
+  };
+
+  const run = async (pr: Promise<CaseDetail>) => {
+    try { const x = await pr; prev.current = x; setC(x); setErr(null); } catch (e: any) { setErr(e.message); }
+  };
+
+  const playAt = (ev: { segment_id: string; t_start: number; t_end: number; char_start: number }) => {
     setFocus({ seg: ev.segment_id, s: ev.char_start });
     document.getElementById(`seg-${ev.segment_id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-    const seg = c?.segments.find((s) => s.id === ev.segment_id);
-    const recId = seg?.recording_id || c?.recordings[0]?.id;
-    if (!recId || !audioRef.current) return;
-    try {
-      if (!audioCache.current[recId]) audioCache.current[recId] = await api.audioUrl(recId);
-      const a = audioRef.current;
-      if (a.src !== audioCache.current[recId]) a.src = audioCache.current[recId];
-      a.currentTime = Math.max(ev.t_start - 0.6, 0);
-      await a.play();
-      const stopAt = ev.t_end + 0.8;
-      const h = () => { if (a.currentTime >= stopAt) { a.pause(); a.removeEventListener("timeupdate", h); } };
-      a.addEventListener("timeupdate", h);
-    } catch (e: any) { setErr(e.message); }
+    player.current?.playFrom(ev.t_start, ev.t_end);
   };
 
   const doReadback = async () => {
@@ -71,7 +91,7 @@ function Workspace() {
 
   return (
     <>
-      <audio ref={audioRef} className="hidden" />
+      <Toasts items={toasts} onClose={(tid) => setToasts((xs) => xs.filter((x) => x.id !== tid))} />
       <TopBar crumbs={[{ href: "/", label: "Case queue" }]} title={<span className="mono text-[14px]">{c.id}</span>}
         right={<>
           <IntakeTimer c={c} />
@@ -88,10 +108,17 @@ function Workspace() {
           <span className="text-fg-2">{c.district || "District not set"}</span>
           <span className="text-fg-2">{c.playbook.label}</span>
           {c.language && <span className="uppercase text-fg-3">{c.language}</span>}
-          {c.synthetic && <Tag>Synthetic demo data</Tag>}
+          {c.synthetic && <Tag title={c.scenario?.note || "Scripted training call"}>Training scenario</Tag>}
+          {c.identity_protected && <Tag tone="warn" title="Informant identity is visible only to the intake officer and supervisors">Identity protected</Tag>}
         </div>
 
         {err && <ErrorNote msg={err} />}
+        {c.processing && (
+          <div className="flex items-center gap-2 rounded border border-accent-line bg-accent-soft px-3 py-2 text-[13px] text-accent">
+            <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+            {c.processing} The live draft is shown until the refined transcript replaces it.
+          </div>
+        )}
         <SafetyAlert c={c} onJump={playAt} />
         {readback && (
           <div className="flex items-start gap-3 rounded border border-accent-line bg-accent-soft px-3 py-2 text-[13px]">
@@ -102,10 +129,11 @@ function Workspace() {
         )}
 
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_340px]">
-          <Transcript c={c} focus={focus} setC={setC} run={run} autostart={search.get("start")} />
+          <Transcript c={c} focus={focus} onLive={onLive} run={run} autostart={search.get("start")} player={player} onPlaySeg={playAt} />
           <div className="space-y-4">
             {victimLike ? <Assessment c={c} /> : <RecordingAnalysis c={c} />}
             <Details c={c} run={run} onPlay={playAt} />
+            <OfficialContext c={c} />
           </div>
           <SideTabs c={c} run={run} reload={load} />
         </div>
@@ -150,13 +178,21 @@ function SafetyAlert({ c, onJump }: { c: CaseDetail; onJump: (e: any) => void })
 
 /* ------------------------------------------------------------------ transcript */
 
-function Transcript({ c, focus, setC, run, autostart }: {
-  c: CaseDetail; focus: { seg: string; s: number } | null; setC: (c: CaseDetail) => void;
+function Transcript({ c, focus, onLive, run, autostart, player, onPlaySeg }: {
+  c: CaseDetail; focus: { seg: string; s: number } | null; onLive: (c: CaseDetail) => void;
   run: (p: Promise<CaseDetail>) => Promise<void>; autostart: string | null;
+  player: React.RefObject<PlayerHandle | null>; onPlaySeg: (e: { segment_id: string; t_start: number; t_end: number; char_start: number }) => void;
 }) {
+  const [playT, setPlayT] = useState<number | null>(null);
+  const [native, setNative] = useState(false);
+  const hasNative = c.segments.some((s) => s.text_native && s.text_native !== s.text);
+  const [replaying, setReplaying] = useState(false);
+  const playingSeg = playT === null ? null : c.segments.find((s) => playT >= s.start - 0.05 && playT <= s.end + 0.05)?.id;
+  useEffect(() => { if (playingSeg) document.getElementById(`seg-${playingSeg}`)?.scrollIntoView({ block: "nearest" }); }, [playingSeg]);
   const [live, setLive] = useState<LiveHandle | null>(null);
   const [level, setLevel] = useState(0);
   const [liveErr, setLiveErr] = useState<string | null>(null);
+  const [liveNote, setLiveNote] = useState<string | null>(null);
   const [text, setText] = useState("");
   const speakers = c.mode === "suspect_recording" ? ["suspect", "caller"] : c.mode === "informant" ? ["informant", "officer"] : ["caller", "officer"];
   const [speaker, setSpeaker] = useState(speakers[0]);
@@ -176,8 +212,9 @@ function Transcript({ c, focus, setC, run, autostart }: {
     setLiveErr(null);
     try {
       setLive(await startLive(api.wsUrl(c.id), (msg) => {
-        if (msg.type === "update") setC(msg.case);
+        if (msg.type === "update") onLive(msg.case);
         if (msg.type === "error") setLiveErr(msg.message);
+        if (msg.type === "status") setLiveNote(msg.message);
       }, setLevel, setLiveErr));
     } catch (e: any) { setLiveErr(e?.message || "Microphone permission denied"); }
   };
@@ -212,9 +249,22 @@ function Transcript({ c, focus, setC, run, autostart }: {
       <header className="panel-h">
         <h3 className="panel-t">Transcript</h3>
         <div className="flex items-center gap-1.5">
+          {hasNative && (
+            <button onClick={() => setNative((x) => !x)} className="btn-quiet btn-xs" title="Switch between Roman Hinglish and the original script">
+              {native ? "Roman" : "Original script"}
+            </button>
+          )}
+          {!live && c.recordings.length > 0 && !c.processing && (
+            <button onClick={() => api.post(`/api/recordings/${c.recordings.at(-1)!.id}/refine`).then(() => run(api.get(`/api/cases/${c.id}`)))}
+              className="btn-quiet btn-xs" title="Re-transcribe the recording with the accurate model">Re-transcribe</button>
+          )}
           <input ref={fileRef} type="file" accept="audio/*" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
           <button onClick={() => fileRef.current?.click()} disabled={uploading || !!live} className="btn-secondary btn-xs"><Upload size={13} /> {uploading ? "Transcribing…" : "Upload audio"}</button>
-          <button onClick={toggleLive} className={clsx("btn btn-xs", live ? "border-crit bg-crit text-white" : "border-fg bg-fg text-white")}>
+          {live && (
+            <button onClick={async () => { setReplaying(true); await live.replay(15); setReplaying(false); }} disabled={replaying}
+              className="btn-secondary btn-xs" title="Play back the last 15 seconds of this call"><RotateCcw size={13} /> {replaying ? "Playing…" : "Replay 15 s"}</button>
+          )}
+          <button onClick={toggleLive} className={clsx("btn btn-xs", live ? "border-crit bg-crit text-white" : "border-brand bg-brand text-white hover:bg-brand-600")}>
             {live ? <><Square size={11} fill="currentColor" /> Stop</> : <><Mic size={13} /> Start live</>}
           </button>
         </div>
@@ -222,23 +272,42 @@ function Transcript({ c, focus, setC, run, autostart }: {
       {live && (
         <div className="flex items-center gap-2 border-b border-line bg-crit-soft px-4 py-1.5 text-xs2 text-crit">
           <span className="h-1.5 w-1.5 rounded-full bg-crit" /> Recording · transcribed in 5-second segments
+          {c.mode !== "suspect_recording" && (() => {
+            const last = [...(c.distress?.timeline || [])].reverse().find((p) => p.label);
+            return last ? <span className="ml-3 text-fg-2">Voice: <b className="font-medium capitalize text-fg">{last.label}</b> {Math.round((last.p || 0) * 100)}%</span> : null;
+          })()}
           <span className="ml-auto h-1.5 w-24 overflow-hidden rounded-full bg-crit-line"><span className="block h-full bg-crit" style={{ width: `${Math.min(100, level * 300)}%` }} /></span>
         </div>
       )}
+      {!live && c.recordings.length > 0 && (
+        <CallAudio ref={player} recordings={c.recordings} segments={c.segments} onTime={setPlayT}
+          marks={c.fields.flatMap((f) => f.evidence.map((e) => ({ t: e.t_start, label: `${LABELS[f.name] || f.label}: ${f.display}` })))} />
+      )}
+      {!live && c.recordings.length === 0 && c.segments.length > 0 && (
+        <div className="border-b border-line bg-bg px-4 py-2 text-xs2 text-fg-3">No audio for this case (typed transcript). Audio becomes playable after a live call or an upload.</div>
+      )}
       {liveErr && <div className="px-4 pt-3"><ErrorNote msg={liveErr} /></div>}
+      {live && liveNote && !c.segments.length && <div className="border-b border-line bg-warn-soft px-4 py-1.5 text-xs2 text-warn">{liveNote}</div>}
       <div className="scroll-thin flex-1 overflow-y-auto px-2 py-2">
         {c.segments.length === 0 && <Empty title="No transcript yet" body="Start live capture, upload a recording, or type what the caller says." />}
         {c.segments.map((s) => (
-          <div key={s.id} id={`seg-${s.id}`} className={clsx("grid grid-cols-[84px_1fr] gap-2 rounded px-2 py-1.5", focus?.seg === s.id && "bg-accent-soft")}>
+          <div key={s.id} id={`seg-${s.id}`} className={clsx("group grid grid-cols-[84px_1fr] gap-2 rounded px-2 py-1.5",
+            playingSeg === s.id ? "bg-[#FEF0C7]/60" : focus?.seg === s.id && "bg-accent-soft")}>
             <div className="pt-px">
               <button onClick={() => relabel(s)} title="Change speaker" className={clsx("text-xs2 font-semibold hover:underline",
                 s.speaker === "officer" ? "text-fg-3" : s.speaker === "suspect" ? "text-crit" : "text-fg")}>
                 {SPEAKER_LABEL[s.speaker || "unknown"] || s.speaker}
               </button>
-              <div className="mono text-[11px] text-fg-4">{ts(s.start)}</div>
+              {s.recording_id || c.recordings.length ? (
+                <button onClick={() => onPlaySeg({ segment_id: s.id, t_start: s.start, t_end: s.end, char_start: -1 })} title="Play this line"
+                  className="mono flex items-center gap-1 text-[11px] text-fg-4 hover:text-accent">
+                  <Play size={9} className="opacity-0 group-hover:opacity-100" fill="currentColor" />{ts(s.start)}
+                </button>
+              ) : <div className="mono text-[11px] text-fg-4">{ts(s.start)}</div>}
             </div>
             <p className={clsx("leading-[1.6]", s.speaker === "officer" ? "text-fg-3" : "text-fg")}>
-              <Highlighted text={s.text} marks={marks[s.id] || []} focusStart={focus?.seg === s.id ? focus.s : null} />
+              {native && s.text_native ? <span title={s.text}>{s.text_native}</span>
+                : <span title={s.text_native && s.text_native !== s.text ? s.text_native : undefined}><Highlighted text={s.text} marks={marks[s.id] || []} focusStart={focus?.seg === s.id ? focus.s : null} /></span>}
               {s.low_confidence && <span className="ml-1.5 align-middle"><Tag tone="warn">Low ASR confidence</Tag></span>}
             </p>
           </div>
@@ -427,7 +496,7 @@ function SideTabs({ c, run, reload }: { c: CaseDetail; run: (p: Promise<CaseDeta
       <div className="flex border-b border-line px-2">
         {tabs.map((t) => (
           <button key={t.k} onClick={() => setTab(t.k)} className={clsx("-mb-px flex h-10 items-center gap-1.5 border-b-2 px-2.5 text-[13px] font-medium",
-            tab === t.k ? "border-fg text-fg" : "border-transparent text-fg-3 hover:text-fg")}>
+            tab === t.k ? "border-brand text-fg" : "border-transparent text-fg-3 hover:text-fg")}>
             {t.label}{t.n !== undefined && t.n > 0 && <span className="rounded bg-bg px-1.5 text-xs2 text-fg-3">{t.n}</span>}
           </button>
         ))}
@@ -511,20 +580,39 @@ function Linked({ c, reload }: { c: CaseDetail; reload: () => void }) {
   );
 }
 
+const EMO_TONE: Record<string, string> = { fearful: "text-crit", sad: "text-warn", angry: "text-warn", disgusted: "text-warn", neutral: "text-fg-2", happy: "text-ok", surprised: "text-fg-2", uncertain: "text-fg-3" };
+
 function Distress({ c }: { c: CaseDetail }) {
   const d = c.distress;
+  const [emoState, setEmoState] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const tick = () => api.get<Health>("/api/health").then((h) => alive && setEmoState(h.models.find((m) => m.name === "voice_emotion")?.state || null)).catch(() => {});
+    tick();
+    const t = setInterval(tick, 5000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
   if (!d) return null;
   if (!d.enabled) return <div className="p-4 text-[13px] text-fg-2">Disabled for this call type. Anvesh does not analyse emotion in suspect recordings.</div>;
   const level = { high: ["High", "text-crit"], elevated: ["Elevated", "text-warn"], low: ["Low", "text-ok"], abstain: ["Not assessed", "text-fg-3"], off: ["Off", "text-fg-3"] }[d.level];
   const pts = d.timeline;
+  const labelled = pts.filter((p) => p.label);
+  const latest = labelled.at(-1);
   const W = 300, H = 56;
   const maxT = Math.max(...pts.map((p) => p.t), 1);
   const path = pts.map((p, i) => `${i ? "L" : "M"}${((p.t / maxT) * W).toFixed(1)},${(H - p.score * H).toFixed(1)}`).join(" ");
   return (
     <div className="space-y-3 p-4">
-      <div className="flex items-baseline justify-between">
-        <span className={clsx("text-[15px] font-semibold", level[1])}>{level[0]}</span>
-        <span className="text-xs2 text-fg-3">{d.score !== null ? `score ${d.score.toFixed(2)} · ` : ""}confidence {d.confidence}</span>
+      {emoState && emoState !== "ready" && (
+        <div className="rounded border border-warn-line bg-warn-soft px-3 py-2 text-xs2 text-warn">
+          {emoState === "loading" ? "Voice emotion model is loading (first run downloads about 1 GB). Pitch and energy are analysed meanwhile." :
+            emoState === "error" ? "Voice emotion model failed to load; only pitch and energy are analysed. See the backend log." :
+              "Voice emotion model not loaded; only pitch and energy are analysed."}
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-3">
+        <KV k="Distress level" v={<span className={clsx("text-[15px] font-semibold", level[1])}>{level[0]}</span>} />
+        <KV k="Latest voice emotion" v={latest ? <span className={clsx("text-[15px] font-semibold capitalize", EMO_TONE[latest.label || ""] || "text-fg")}>{latest.label} <span className="text-[12px] font-normal text-fg-3">{Math.round((latest.p || 0) * 100)}%</span></span> : <span className="text-fg-3">—</span>} />
       </div>
       {pts.length > 1 && (
         <svg viewBox={`0 0 ${W} ${H + 2}`} className="w-full" role="img" aria-label="Distress over the call">
@@ -533,6 +621,25 @@ function Distress({ c }: { c: CaseDetail }) {
           <path d={path} fill="none" stroke="#475467" strokeWidth="1.5" strokeLinejoin="round" />
         </svg>
       )}
+      {labelled.length > 0 && (
+        <div>
+          <div className="label mb-1">Per 3-second window</div>
+          <div className="scroll-thin max-h-40 overflow-y-auto rounded border border-line">
+            <table className="w-full text-xs2">
+              <tbody>
+                {[...labelled].reverse().map((p, i) => (
+                  <tr key={i} className="border-b border-line last:border-0">
+                    <td className="mono px-2 py-1 text-fg-3">{ts(p.t)}</td>
+                    <td className={clsx("px-2 py-1 font-medium capitalize", EMO_TONE[p.label || ""] || "text-fg")}>{p.label}</td>
+                    <td className="px-2 py-1 text-right text-fg-3">{Math.round((p.p || 0) * 100)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      <div className="text-xs2 text-fg-3">{d.score !== null ? `Score ${d.score.toFixed(2)} · ` : ""}confidence {d.confidence}</div>
       <ul className="space-y-0.5 text-xs2 text-fg-2">{d.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
       {d.abstain_reasons.length > 0 && (
         <div className="rounded border border-line bg-bg px-3 py-2 text-xs2 text-fg-2">
@@ -595,5 +702,70 @@ function ReportModal({ id, onClose }: { id: string; onClose: () => void }) {
         )}
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ in-call alerts */
+
+function beep() {
+  try {
+    const ctx = new AudioContext();
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = 880; g.gain.value = 0.08;
+    o.connect(g); g.connect(ctx.destination); o.start();
+    setTimeout(() => { o.stop(); ctx.close(); }, 220);
+  } catch {}
+}
+
+function Toasts({ items, onClose }: { items: { id: number; tone: "crit" | "warn" | "accent" | "ok"; title: string; body?: string }[]; onClose: (id: number) => void }) {
+  const bar = { crit: "border-l-crit", warn: "border-l-warn", accent: "border-l-accent", ok: "border-l-ok" };
+  return (
+    <div className="pointer-events-none fixed right-4 top-16 z-40 flex w-[340px] flex-col gap-2">
+      {items.map((t) => (
+        <div key={t.id} className={clsx("pointer-events-auto rounded border border-line border-l-4 bg-surface px-3 py-2 shadow-lg", bar[t.tone])}>
+          <div className="flex items-start justify-between gap-2">
+            <div className="text-[13px] font-medium text-fg">{t.title}</div>
+            <button onClick={() => onClose(t.id)} className="text-fg-4 hover:text-fg"><X size={13} /></button>
+          </div>
+          {t.body && <div className="mt-0.5 text-xs2 text-fg-2">{t.body}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
+function OfficialContext({ c }: { c: CaseDetail }) {
+  const lc = c.local_context, st = c.official_scam_type, sc = c.scenario;
+  if (!lc && !st && !sc) return null;
+  const pct = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${v}%`);
+  const srcs = [...(st ? [st.source] : []), ...(lc?.sources || [])];
+  return (
+    <Panel title="Official context" action={<span className="text-xs2 text-fg-3">Published government data</span>}>
+      {sc && (
+        <div className="mb-4 rounded border border-line bg-bg px-3 py-2 text-xs2 leading-[17px] text-fg-2">
+          <span className="font-medium text-fg">Training scenario.</span> {sc.note} Scam type reproduced: <span className="text-fg">{sc.category}</span>.
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+        {st && (
+          <>
+            <KV className="col-span-2" k="This scam type, reported nationally (Chakshu)" v={
+              <span><span className="text-[18px] font-semibold tabular-nums">{n(st.reports_2025)}</span> <span className="text-fg-3">reports in 2025 · {pct(st.share_2025_pct)} of all · {n(st.reports_2024)} in 2024</span></span>} />
+            <div className="col-span-2 -mt-3 text-xs2 text-fg-3">{st.categories.join(" · ")}</div>
+          </>
+        )}
+        {lc && (
+          <>
+            <KV k={`Cyber crimes, ${lc.state.name} (2023)`} v={<span className="tabular-nums"><b className="font-semibold">{n(lc.state.cases_2023)}</b> <span className="text-fg-3">{lc.state.change_2022_2023_pct !== null && `${lc.state.change_2022_2023_pct > 0 ? "+" : ""}${lc.state.change_2022_2023_pct}% vs 2022`}</span></span>} />
+            <KV k="Share with fraud motive" v={<span className="tabular-nums"><b className="font-semibold">{pct(lc.state.fraud_share_2023_pct)}</b> <span className="text-fg-3">India {pct(lc.india.fraud_share_2023_pct)}</span></span>} />
+            <KV k="Crime rate per lakh" v={<span className="tabular-nums"><b className="font-semibold">{lc.state.rate_2023 ?? "—"}</b> <span className="text-fg-3">India {lc.india.rate_2023}</span></span>} />
+            <KV k="Chargesheeting rate" v={<span className="tabular-nums"><b className="font-semibold">{pct(lc.state.chargesheet_rate_2023)}</b> <span className="text-fg-3">India {pct(lc.india.chargesheet_rate_2023)}</span></span>} />
+            {lc.city && <KV className="col-span-2" k={`${lc.city.name}, metropolitan city (2023)`} v={<span className="tabular-nums"><b className="font-semibold">{n(lc.city.cases_2023)}</b> cyber crimes · {n(lc.city.fraud_2023)} with fraud motive</span>} />}
+          </>
+        )}
+      </div>
+      {srcs.length > 0 && <SourceNote sources={srcs} className="mt-4 border-t border-line pt-3" />}
+    </Panel>
   );
 }

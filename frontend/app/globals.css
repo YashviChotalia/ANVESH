@@ -9,7 +9,8 @@
 @layer base {
   html { -webkit-font-smoothing: antialiased; font-feature-settings: "cv11", "ss01", "tnum"; }
   body { @apply bg-bg text-fg font-sans text-sm2; }
-  :focus-visible { @apply outline-none ring-2 ring-accent/40 ring-offset-1; }
+  :focus-visible { @apply outline-none ring-2 ring-brand/50 ring-offset-1; }
+  ::selection { @apply bg-brand-soft; }
   h1, h2, h3 { @apply font-semibold tracking-[-0.01em]; }
 }
 
@@ -20,13 +21,14 @@
   .label { @apply text-xs2 font-medium text-fg-3; }
   .btn { @apply inline-flex h-8 items-center justify-center gap-1.5 rounded border px-3 text-[13px] font-medium transition-colors
     disabled:cursor-not-allowed disabled:opacity-50; }
-  .btn-primary { @apply btn border-fg bg-fg text-white hover:bg-[#1D2939]; }
+  .btn-primary { @apply btn border-brand bg-brand text-white hover:border-brand-600 hover:bg-brand-600; }
+  .btn-dark { @apply btn border-fg bg-fg text-white hover:bg-[#1D2939]; }
   .btn-secondary { @apply btn border-line2 bg-surface text-fg hover:bg-bg; }
   .btn-quiet { @apply btn border-transparent bg-transparent text-fg-2 hover:bg-bg hover:text-fg; }
   .btn-xs { @apply h-7 px-2 text-xs2; }
   .input { @apply h-8 w-full rounded border border-line2 bg-surface px-2.5 text-[13px] placeholder:text-fg-4
-    focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15; }
-  .tag { @apply inline-flex items-center gap-1 rounded border px-1.5 py-px text-xs2 font-medium; }
+    focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20; }
+  .tag { @apply inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-px text-xs2 font-medium; }
   .mono { @apply font-mono text-[12px]; }
   .th { @apply border-b border-line px-3 py-2 text-left text-xs2 font-medium text-fg-3; }
   .td { @apply border-b border-line px-3 py-2.5 align-middle; }
