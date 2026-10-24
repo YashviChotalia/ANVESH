@@ -64,7 +64,7 @@ export default function Insights() {
         </Card>
 
         <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-          <Card title="Where cyber crime is registered, 2023" pad={false} sources={[...src("state_cyber"), ...src("state_motives")]}
+          <Card title="Where cyber crime is registered, 2023" pad={false} className="xl:h-[760px]" sources={[...src("state_cyber"), ...src("state_motives")]}
             right={
               <div className="flex gap-1 text-xs2">
                 {([["cases_2023", "Cases"], ["rate_2023", "Rate"], ["fraud_share_2023_pct", "Fraud share"], ["chargesheet_rate_2023", "Chargesheet"]] as const).map(([k, l]) => (
@@ -73,7 +73,7 @@ export default function Insights() {
                 ))}
               </div>}
             note={`All ${d.states.length} states and UTs. Rate is cases per lakh population. NCRB advises against ranking states on crime figures alone.`}>
-            <div className="max-h-[720px] overflow-auto scroll-thin">
+            <div className="h-full max-h-[620px] overflow-auto scroll-thin xl:max-h-none">
             <table className="w-full border-collapse text-[13px]">
               <thead className="sticky top-0 bg-surface">
                 <tr>
@@ -99,18 +99,24 @@ export default function Insights() {
           </Card>
 
           <div className="space-y-5">
-            <Card title="Fraud cases in metropolitan cities, 2023" sources={src("city_motives")} note={`All ${d.cities.length} metropolitan cities. Bars show cases with a fraud motive; the figure on the right is their share of all cyber crime there.`}>
+            <Card title="Fraud cases in metropolitan cities, 2023" className="xl:h-[760px]" pad={false} sources={src("city_motives")} note={`All ${d.cities.length} metropolitan cities. Bars show cases with a fraud motive; the figure on the right is their share of all cyber crime there.`}>
+              <div className="h-full max-h-[620px] overflow-auto p-4 scroll-thin xl:max-h-none">
               <Bars rows={[...d.cities].sort((a, b) => b.fraud_2023 - a.fraud_2023).map((c) => ({
                 label: c.name, value: c.fraud_2023, right: c.fraud_share_2023_pct === null ? "—" : `${c.fraud_share_2023_pct}%`,
               }))} />
+              </div>
             </Card>
+
+          </div>
+        </div>
+
+        <div className="grid items-stretch gap-5 xl:grid-cols-2">
             <Card title="Motives behind cyber crime, India 2023" sources={src("state_motives")}>
               <Bars rows={d.motives_2023.map((m) => ({ label: m.motive, value: m.cases, right: `${m.share_pct}%` }))} />
             </Card>
             <Card title="Cyber crime cases registered in India" sources={src("crime_heads")}>
               <Columns data={d.trend.map((t) => ({ label: String(t.year), value: t.cases, extra: `${n(t.fraud_ipc + t.cheating_ipc)} fraud and cheating (IPC)` }))} fmt={n} />
             </Card>
-          </div>
         </div>
 
         <section className="panel">
@@ -137,13 +143,13 @@ function Hero({ label, value, sub, src }: { label: string; value: string; sub: s
   );
 }
 
-function Card({ title, right, note, sources, children, pad = true }: {
-  title: string; right?: React.ReactNode; note?: string; sources: SourceRef[]; children: React.ReactNode; pad?: boolean;
+function Card({ title, right, note, sources, children, pad = true, className }: {
+  title: string; right?: React.ReactNode; note?: string; sources: SourceRef[]; children: React.ReactNode; pad?: boolean; className?: string;
 }) {
   return (
-    <section className="panel flex flex-col">
+    <section className={clsx("panel flex flex-col", className)}>
       <header className="panel-h"><h3 className="panel-t">{title}</h3>{right}</header>
-      <div className={clsx("flex-1", pad && "p-4")}>{children}</div>
+      <div className={clsx("min-h-0 flex-1", pad && "p-4")}>{children}</div>
       <div className="border-t border-line px-4 py-2.5">
         {note && <p className="mb-1 text-xs2 text-fg-2">{note}</p>}
         <SourceNote sources={sources} />

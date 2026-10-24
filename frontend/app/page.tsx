@@ -79,7 +79,7 @@ export default function Queue() {
           <Metric label="Reported loss (open)" value={stats ? inrShort(stats.reported_loss) : undefined} sub="As reported by callers" />
         </div>
 
-        <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
           <section className="panel overflow-hidden">
             <div className="flex items-center gap-1 border-b border-line px-3">
               {([["all", "All open"], ["IMMEDIATE", "Immediate"], ["safety", "Safety alerts"], ["linked", "Linked"]] as const).map(([k, l]) => (
@@ -130,6 +130,7 @@ export default function Queue() {
                             <div className="flex max-w-[150px] flex-wrap gap-1">
                               {c.crisis && <Tag tone="crit">Crisis</Tag>}
                               {c.coercion && <Tag tone="crit">Coercion</Tag>}
+                              {c.voice_flag && <Tag tone="warn" title="The voice may be synthetic or cloned: verify the caller">Voice check</Tag>}
                               {ring && <Tag tone="accent">Linked · {ring.size}</Tag>}
                             </div>
                           </td>
@@ -151,8 +152,10 @@ export default function Queue() {
             )}
           </section>
 
-          <div className="min-w-0 space-y-5">
-          <section className="panel h-fit overflow-hidden">
+          <div className="relative min-w-0">
+          {/* on wide screens this column matches the table's height exactly; groups scroll inside */}
+          <div className="flex flex-col gap-5 xl:absolute xl:inset-0">
+          <section className="panel shrink-0 overflow-hidden">
             <header className="panel-h"><h3 className="panel-t">Scam trends · 7 days</h3><span className="text-xs2 text-fg-3">24 h / 7 d</span></header>
             {radar.length === 0 ? <Empty title="No complaints in the last 7 days" /> : (
               <ul className="divide-y divide-line">
@@ -172,10 +175,10 @@ export default function Queue() {
               </ul>
             )}
           </section>
-          <section className="panel h-fit overflow-hidden">
+          <section className="panel flex min-h-[240px] flex-1 flex-col overflow-hidden">
             <header className="panel-h"><h3 className="panel-t">Linked groups</h3><Link href="/rings" className="text-xs2 font-medium text-accent hover:underline">View graph</Link></header>
             {rings.length === 0 ? <Empty title="No linked cases" body="Cases are linked when they share an identifier, scam script or suspect voice." /> : (
-              <ul className="max-h-[520px] divide-y divide-line overflow-auto scroll-thin">
+              <ul className="max-h-[520px] min-h-0 flex-1 divide-y divide-line overflow-auto scroll-thin xl:max-h-none">
                 {rings.map((r) => (
                   <li key={r.id}>
                     <Link href={`/rings?ring=${r.id}`} className="block px-4 py-3 hover:bg-bg">
@@ -191,6 +194,7 @@ export default function Queue() {
               </ul>
             )}
           </section>
+          </div>
           </div>
         </div>
       </div>

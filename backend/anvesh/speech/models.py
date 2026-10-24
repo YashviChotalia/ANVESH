@@ -239,16 +239,46 @@ class Speaker(_Lazy):
         return [round(float(v), 6) for v in e]
 
 
+FAKE_WORDS = ("fake", "spoof", "synth", "deepfake", "generated", "tts", "clone")
+
+
+class SpoofDetector(_Lazy):
+    """Synthetic / cloned-voice detector (audio classification model, labels like real vs fake)."""
+    name = "voice_authenticity"
+    license = "Check the model card of ANVESH_SPOOF_MODEL before deployment"
+
+    def _load(self):  # pragma: no cover - needs model files
+        from transformers import pipeline
+        return pipeline("audio-classification", model=self.model_id, device=-1)
+
+    def p_fake(self, audio: np.ndarray, sr: int = 16000) -> float | None:
+        """Probability the speech is machine-generated, averaged over up to three 4 s windows."""
+        m = self.get(block=False)
+        if m is None:
+            return None
+        n = 4 * sr
+        starts = [0] if len(audio) <= n else list(np.linspace(0, len(audio) - n, num=min(3, len(audio) // n + 1)).astype(int))
+        scores = []
+        for st in starts:
+            res = m({"raw": audio[st:st + n].astype(np.float32), "sampling_rate": sr}, top_k=None)
+            fake = sum(r["score"] for r in res if any(w in str(r["label"]).lower() for w in FAKE_WORDS))
+            real = sum(r["score"] for r in res if not any(w in str(r["label"]).lower() for w in FAKE_WORDS))
+            if fake + real > 0:
+                scores.append(fake / (fake + real))
+        return float(np.mean(scores)) if scores else None
+
+
 asr = ASR(settings.asr_model, settings.enable_asr)
 asr_final = FinalASR(settings.asr_final_model, settings.enable_asr and settings.enable_asr_final
                      and settings.asr_final_model != settings.asr_model)
 emotion = Emotion(settings.emotion_model, settings.enable_emotion)
 speaker = Speaker("speechbrain/spkrec-ecapa-voxceleb", settings.enable_speaker)
+spoof = SpoofDetector(settings.spoof_model, settings.enable_spoof)
 
 
 def warmup() -> None:
     """Start loading every enabled model in the background (downloads on first run)."""
-    for m in (asr, emotion, speaker, asr_final):
+    for m in (asr, emotion, speaker, asr_final, spoof):
         m.start_loading()
 
 
@@ -258,4 +288,4 @@ def best_asr() -> ASR:
 
 
 def statuses() -> list[dict]:
-    return [s.status().__dict__ for s in (asr, asr_final, emotion, speaker)]
+    return [s.status().__dict__ for s in (asr, asr_final, emotion, speaker, spoof)]

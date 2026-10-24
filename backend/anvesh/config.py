@@ -39,6 +39,9 @@ class Settings:
     emotion_model: str = os.getenv("ANVESH_EMOTION_MODEL", "iic/emotion2vec_plus_base")
     enable_emotion: bool = _bool("ANVESH_ENABLE_EMOTION", True)
     enable_speaker: bool = _bool("ANVESH_ENABLE_SPEAKER", True)
+    # synthetic / cloned voice detection (audio-classification model with real vs fake labels)
+    spoof_model: str = os.getenv("ANVESH_SPOOF_MODEL", "MelodyMachine/Deepfake-audio-detection-V2")
+    enable_spoof: bool = _bool("ANVESH_ENABLE_SPOOF", True)
     text_embedder: str = os.getenv("ANVESH_TEXT_EMBEDDER", "")  # e.g. paraphrase-multilingual-MiniLM-L12-v2
 
     live_chunk_seconds: float = float(os.getenv("ANVESH_LIVE_CHUNK_SECONDS", "5"))

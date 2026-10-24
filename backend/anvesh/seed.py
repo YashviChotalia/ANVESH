@@ -148,6 +148,9 @@ def seed(reset: bool = False, none: bool = False, generated: int = 60) -> int:
     made = 0
     with SessionLocal() as db:
         _retire_legacy_demo(db)
+        for c in db.query(Case).filter(Case.synthetic.is_(True)).all():  # older versions put "(synthetic)" in names
+            if c.caller_label and c.caller_label.endswith(" (synthetic)"):
+                c.caller_label = c.caller_label.removesuffix(" (synthetic)")
         batch = [("T", i, d) for i, d in enumerate(DEMO)] + [("G", i, d) for i, d in enumerate(synth.generate(generated))]
         for prefix, i, d in batch:
             started = now - timedelta(minutes=d["ago"])

@@ -83,6 +83,7 @@ class Case(Base):
     synthetic: Mapped[bool] = mapped_column(Boolean, default=False)  # True = scripted training scenario, not a real call
     scenario: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # official basis for a training scenario
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)  # username of the intake officer
+    voice_auth: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # latest synthetic-voice assessment
     priority: Mapped[str] = mapped_column(String(16), default="STANDARD")
     priority_score: Mapped[int] = mapped_column(Integer, default=0)
     playbook_key: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -116,7 +117,8 @@ class Recording(Base):
     duration: Mapped[float | None] = mapped_column(Float, nullable=True)
     stored_path: Mapped[str] = mapped_column(String(512))
     speaker_embedding: Mapped[list | None] = mapped_column(_enc("recordings", "speaker_embedding", True), nullable=True)
-    offset: Mapped[float] = mapped_column(Float, default=0.0)  # where this audio starts on the case timeline (s)
+    offset: Mapped[float] = mapped_column(Float, default=0.0)
+    voice_auth: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # synthetic-voice assessment of this audio  # where this audio starts on the case timeline (s)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     case: Mapped[Case] = relationship(back_populates="recordings")
 

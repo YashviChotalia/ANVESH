@@ -46,3 +46,25 @@ def test_chunker_cuts_at_a_pause_even_with_background_noise():
     assert ch.should_cut(3.0, noise[: SR])         # paused (quiet relative to the room)
     assert ch.should_cut(8.0, speech)              # never wait longer than the max
     assert not ch.should_cut(1.0, noise[: SR])     # too short to be worth transcribing
+
+
+def test_a_complainant_is_never_read_as_happy():
+    happy = {"happy": 0.7, "neutral": 0.2, "fearful": 0.1}
+    v = live_ser.adjust_for_role(happy, "victim")
+    assert "happy" not in v and abs(sum(v.values()) - 1) < 1e-3 and v["fearful"] > 0.1
+    assert live_ser.adjust_for_role(happy, "suspect") == happy  # suspects are not adjusted
+    tr = live_ser.LiveEmotionTracker(predict=lambda x: happy, role="victim")
+    assert tr.analyse(_voice(3, 0.1), 0)["label"] != "happy"
+
+
+def test_distress_rises_with_words_and_situation_even_when_voice_is_flat():
+    from anvesh import distress
+    flat = [distress.Window(i * 3, i * 3 + 3, {"neutral": 0.9, "sad": 0.1},
+                            {"pitch_std": 20, "rms": 0.1, "speech_rate": 3, "pause_ratio": 0.2, "snr_db": 30})
+            for i in range(6)]
+    calm = distress.assess("victim", flat, [], [], language="hi")
+    words = [{"phrase": "please help"}, {"phrase": "dar lag raha"}]
+    tense = distress.assess("victim", flat, words, [], language="hi", coercion=True, loss_reported=True)
+    assert calm.level == "low" and tense.level in ("elevated", "high") and tense.score > calm.score
+    old_happy = [distress.Window(0, 3, {"happy": 0.9, "neutral": 0.1}, None)]
+    assert all(p["label"] != "happy" for p in distress.assess("victim", old_happy, [], []).timeline)

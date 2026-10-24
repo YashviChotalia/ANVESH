@@ -108,6 +108,7 @@ function Chrome({ children, can, me }: { children: React.ReactNode; can: (p: str
           <ModelStatus label="Speech-to-text (live)" m={m("asr")} down={down} />
           <ModelStatus label="Speech-to-text (accurate)" m={m("asr_final")} down={down} />
           <ModelStatus label="Voice emotion" m={m("voice_emotion")} down={down} />
+          <ModelStatus label="Synthetic-voice check" m={m("voice_authenticity")} down={down} />
         </div>
       </aside>
       <main className="min-w-0 flex-1">

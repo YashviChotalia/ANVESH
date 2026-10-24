@@ -31,6 +31,11 @@ DISTRESS_LEXICON = [
     "please help", "help kijiye", "madad", "bachao", "ro raha", "ro rahi", "dar lag raha",
     "bahut dar", "ghabra", "panic", "scared", "darr", "pareshan", "please sir", "sir please",
     "kya karun", "kya karu", "meri saari savings", "saari savings", "life savings",
+    "help me", "please help me", "i am scared", "i'm scared", "what do i do", "what should i do",
+    "bahut tension", "tension ho", "rona aa", "ro rahi hoon", "ro raha hoon", "ghabrahat", "mujhe dar",
+    "kuch samajh nahi", "samajh nahi aa raha", "sab chala gaya", "loot liya", "dhokha", "please jaldi",
+    "jaldi kuch karo", "kuch kijiye", "please kuch", "bahut bura", "barbaad", "mar gaya", "mar gayi",
+    "मदद", "बचाओ", "डर लग", "परेशान", "प्लीज", "क्या करूं", "सब चला गया",
 ]
 
 CRISIS_RESOURCE = "Tele-MANAS mental-health helpline: 14416 (24x7). Hand over to a trained person."

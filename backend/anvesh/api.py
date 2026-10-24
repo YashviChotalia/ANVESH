@@ -111,6 +111,7 @@ def case_summary(case: Case, p: Principal | None = None) -> dict:
         "playbook": {"key": case.playbook_key, "label": pb.label if pb else "Type unclear", "confidence": case.playbook_conf},
         "amount": _amount(case), "headline": (case.triage or {}).get("headline"),
         "coercion": bool((case.safety or {}).get("coercion")), "crisis": bool((case.safety or {}).get("crisis")),
+        "voice_flag": (case.voice_auth or {}).get("verdict") in ("likely_synthetic", "needs_verification"),
         "language": case.language, "intake_seconds": case.intake_seconds,
     }
 
@@ -134,8 +135,10 @@ def case_detail(db: Session, case: Case, p: Principal | None = None) -> dict:
         "local_context": official.context_for(case.district),
         "official_scam_type": official.playbook_context(case.playbook_key),
         "scenario": case.scenario,
+        "voice_auth": case.voice_auth,
         "recordings": [{"id": r.id, "kind": r.kind, "filename": r.filename, "sha256": r.sha256,
                         "duration": r.duration, "size_bytes": r.size_bytes, "offset": r.offset or 0.0,
+                        "voice_auth": r.voice_auth,
                         "has_voiceprint": bool(r.speaker_embedding)} for r in case.recordings],
         "links": [{"id": l.id, "kind": l.kind, "score": l.score, "status": l.status, "detail": l.detail,
                    "other": case_summary(others[o], p) if (o := (l.case_b if l.case_a == case.id else l.case_a)) in others else {"id": o}}
@@ -457,6 +460,8 @@ def create_case(body: CaseIn, db: Session = Depends(db_session), p: Principal = 
 def get_case(case_id: Annotated[str, CaseId], db: Session = Depends(db_session), p: Principal = Depends(CASE_READ)):
     who = p.actor
     case = _get(db, case_id)
+    if case.distress and "voice_score" not in case.distress:  # analysed by an older version: refresh once
+        pipeline.process(db, case, "system")
     key = (p.username, case.id)
     if time.monotonic() - _viewed.get(key, -1e9) > 600:  # access log, at most once per officer per case per 10 min
         _viewed[key] = time.monotonic()
@@ -746,12 +751,15 @@ async def live(ws: WebSocket, case_id: str):
     Authenticated by the session cookie; the Origin header must be an allowed frontend origin
     (blocks cross-site WebSocket hijacking). Frames and session length are capped."""
     if ws.headers.get("origin") not in settings.cors_origins or not re.match(r"^AV-\d{4}-[A-Z0-9]{4,6}$", case_id):
+        log.warning("live %s refused: origin %r not allowed (open the app at one of %s)", case_id,
+                    ws.headers.get("origin"), ", ".join(settings.cors_origins))
         await ws.close(code=4403)
         return
     with SessionLocal() as dba:
         p = auth.principal_from_token(dba, ws.cookies.get(auth.COOKIE))
         dba.commit()
     if p is None or not p.can("case:write") or p.must_change_password:
+        log.warning("live %s refused: %s", case_id, "no valid session cookie" if p is None else "role cannot take calls")
         await ws.close(code=4401)
         return
     if not auth.limiter.allow(f"ws:{p.id}", 20, 60):
@@ -788,8 +796,20 @@ async def live(ws: WebSocket, case_id: str):
     asr_q: asyncio.Queue = asyncio.Queue()
     emo_q: asyncio.Queue = asyncio.Queue(maxsize=2)
     chunker = live_ser.Chunker(target_s=settings.live_chunk_seconds)
-    tracker = live_ser.LiveEmotionTracker(M.emotion.predict if mode != "suspect_recording" else None)
+    tracker = live_ser.LiveEmotionTracker(M.emotion.predict if mode != "suspect_recording" else None,
+                                          role=pipeline.ROLE.get(mode, "victim"))
     pending_windows: list[dict] = []
+    voice_busy = {"on": False, "next_s": 10.0}
+
+    async def voice_check(pcm: bytes, t_end: float) -> None:
+        try:
+            va = await asyncio.to_thread(pipeline.check_voice, A.pcm16_to_float(pcm), mode)
+            await send({"type": "voice_auth", "t": round(t_end, 1), **{k: va.get(k) for k in
+                        ("verdict", "score", "model_score", "cue_score", "reasons", "abstain", "advice")}})
+        except Exception:  # pragma: no cover
+            log.exception("live voice check failed")
+        finally:
+            voice_busy["on"] = False
     prev_text: list[str] = []
     stats = {"chunks": 0, "empty": 0}
     send_lock = asyncio.Lock()
@@ -900,6 +920,10 @@ async def live(ws: WebSocket, case_id: str):
                     emo_since = 0
                     t_end = start_offset + len(full) / (A.SR * 2)
                     emo_q.put_nowait((t_end - len(emo_ring) / (A.SR * 2), bytes(emo_ring)))
+                secs = len(full) / (A.SR * 2)
+                if secs >= voice_busy["next_s"] and not voice_busy["on"]:  # synthetic-voice check every ~10 s
+                    voice_busy.update(on=True, next_s=secs + 10.0)
+                    asyncio.create_task(voice_check(bytes(full[-int(A.SR * 12) * 2:]), start_offset + secs))
                 tail = bytes(buf[-int(A.SR * 0.5) * 2:])
                 if chunker.should_cut(len(buf) / (A.SR * 2), tail):
                     cut()
@@ -924,13 +948,15 @@ async def live(ws: WebSocket, case_id: str):
     await asyncio.gather(*workers, return_exceptions=True)
     detail = None
     if full:
+        full_x = A.pcm16_to_float(bytes(full))
+        va = await asyncio.to_thread(pipeline.check_voice, full_x, mode)
         with SessionLocal() as db:
             case = pipeline.get_case(db, case_id)
             if pending_windows:
                 case.windows = list(case.windows or []) + pending_windows
-            wav = A.to_wav_bytes(A.pcm16_to_float(bytes(full)))
+            wav = A.to_wav_bytes(full_x)
             rec = pipeline.ingest_audio(db, case, wav, f"live-{case.id}.wav", "audio/wav", "call", who,
-                                        start_offset, precomputed={})
+                                        start_offset, precomputed={"voice_auth": va})
             for sg in case.segments:  # tie this session's lines to the saved audio for playback
                 if sg.recording_id is None and sg.start >= start_offset - 0.01:
                     sg.recording_id = rec.id

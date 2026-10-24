@@ -61,6 +61,26 @@ class Baseline:
         return round(float(1 / (1 + np.exp(-1.6 * z))), 3)  # 0..1, 0.5 = the caller's usual voice
 
 
+POSITIVE = ("happy", "surprised")
+
+
+def adjust_for_role(emotions: dict[str, float] | None, role: str) -> dict[str, float] | None:
+    """Common-sense prior: someone calling a cybercrime helpline to report harm is not 'happy'.
+
+    For victims and informants, emotion2vec's 'happy' on a tense phone line is almost always nervous
+    laughter, forced politeness or a telephone-band artefact, and 'surprised' is shock. So 'happy' is never
+    reported for these roles: 40% of its mass is read as nervous arousal (added to 'fearful'), the rest is
+    dropped; 'surprised' is shared between 'fearful' and 'neutral'. Suspect recordings are left untouched.
+    """
+    if not emotions or role not in ("victim", "informant"):
+        return emotions
+    e = {k: v for k, v in emotions.items() if k not in POSITIVE}
+    e["fearful"] = e.get("fearful", 0.0) + 0.4 * emotions.get("happy", 0.0) + 0.5 * emotions.get("surprised", 0.0)
+    e["neutral"] = e.get("neutral", 0.0) + 0.5 * emotions.get("surprised", 0.0)
+    total = sum(e.values())
+    return {k: round(v / total, 4) for k, v in e.items()} if total > 0 else None
+
+
 def indicators(emotions: dict[str, float] | None, arousal: float | None) -> dict[str, float]:
     """Map model classes + arousal to fear / anger / distress / nervousness (0..1, indicative)."""
     e = emotions or {}
@@ -80,8 +100,9 @@ def indicators(emotions: dict[str, float] | None, arousal: float | None) -> dict
 
 
 class LiveEmotionTracker:
-    def __init__(self, predict=None):
+    def __init__(self, predict=None, role: str = "victim"):
         self.predict = predict  # callable(np.ndarray) -> dict | None
+        self.role = role
         self.baseline = Baseline()
         self.smoothed: dict[str, float] | None = None
         self.history: list[dict] = []
@@ -102,7 +123,7 @@ class LiveEmotionTracker:
         emo = None
         if self.predict:
             try:
-                emo = self.predict(x)
+                emo = adjust_for_role(self.predict(x), self.role)
             except Exception:  # pragma: no cover - model failure must never break the call
                 emo = None
         if emo:

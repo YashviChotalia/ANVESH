@@ -126,6 +126,6 @@ def generate(n: int = 60, seed: int = 7) -> list[dict]:
             lines.append(("caller", "sir abhi bhi video call pe hain woh, please help"))
         if rng.random() < 0.05:
             lines.append(("caller", "sab khatam ho gaya, jeene ka mann nahi kar raha"))
-        out.append({"mode": "victim", "district": city, "caller": f"{rng.choice(FIRST)} {rng.choice(LAST)} (synthetic)",
+        out.append({"mode": "victim", "district": city, "caller": f"{rng.choice(FIRST)} {rng.choice(LAST)}",
                     "category": t["category"], "ago": rng.randint(5, 60 * 24 * 7), "lines": lines})
     return out

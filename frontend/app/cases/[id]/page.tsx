@@ -11,7 +11,7 @@ import { Empty, ErrorNote, KV, n, Panel, PriorityBadge, SourceNote, StatusTag, T
 import { api } from "@/lib/api";
 import { inr, MODE_LABEL, SPEAKER_LABEL, ts } from "@/lib/format";
 import { startLive, type LiveHandle } from "@/lib/live";
-import type { CaseDetail, CaseField, Evidence, Health, LinkT, SegmentT } from "@/lib/types";
+import type { VoiceAuth, CaseDetail, CaseField, Evidence, Health, LinkT, SegmentT } from "@/lib/types";
 
 export default function CasePage() {
   return <Suspense fallback={<div className="p-6 text-fg-3">Loading case…</div>}><Workspace /></Suspense>;
@@ -100,7 +100,8 @@ function Workspace() {
           {!c.intake_seconds && <button onClick={() => run(api.post(`/api/cases/${c.id}/complete`))} className="btn-primary"><Check size={14} /> Complete intake</button>}
         </>} />
 
-      <div className="space-y-4 p-6">
+      {/* on laptop screens and wider the whole case fits the window: only the columns scroll inside */}
+      <div className="flex flex-col gap-4 p-6 xl:h-[calc(100vh-56px)] xl:overflow-hidden xl:py-4 [&>*]:shrink-0">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px]">
           <PriorityBadge p={c.priority} />
           <span className="font-medium">{MODE_LABEL[c.mode]}</span>
@@ -108,7 +109,7 @@ function Workspace() {
           <span className="text-fg-2">{c.district || "District not set"}</span>
           <span className="text-fg-2">{c.playbook.label}</span>
           {c.language && <span className="uppercase text-fg-3">{c.language}</span>}
-          {c.synthetic && <Tag title={c.scenario?.note || "Scripted training call"}>Training scenario</Tag>}
+          {c.voice_auth && VA_TONE[c.voice_auth.verdict] && <Tag tone={VA_TONE[c.voice_auth.verdict]} title={VA_LABEL[c.voice_auth.verdict]}>{VA_SHORT[c.voice_auth.verdict]}</Tag>}
           {c.identity_protected && <Tag tone="warn" title="Informant identity is visible only to the intake officer and supervisors">Identity protected</Tag>}
         </div>
 
@@ -128,14 +129,9 @@ function Workspace() {
           </div>
         )}
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_340px]">
+        <div className="grid gap-4 xl:min-h-0 xl:flex-1 xl:shrink xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:grid-rows-[minmax(0,1fr)]">
           <Transcript c={c} focus={focus} onLive={onLive} run={run} autostart={search.get("start")} player={player} onPlaySeg={playAt} />
-          <div className="space-y-4">
-            {victimLike ? <Assessment c={c} /> : <RecordingAnalysis c={c} />}
-            <Details c={c} run={run} onPlay={playAt} />
-            <OfficialContext c={c} />
-          </div>
-          <SideTabs c={c} run={run} reload={load} />
+          <CaseTabs c={c} run={run} reload={load} onPlay={playAt} />
         </div>
       </div>
       {report && <ReportModal id={c.id} onClose={() => setReport(false)} />}
@@ -178,13 +174,76 @@ function SafetyAlert({ c, onJump }: { c: CaseDetail; onJump: (e: any) => void })
 
 /* ------------------------------------------------------------------ transcript */
 
+const VA_LABEL: Record<string, string> = {
+  likely_real: "Consistent with a live human voice", uncertain: "No clear signal either way",
+  needs_verification: "Possibly synthetic or cloned: verify the caller", likely_synthetic: "Likely synthetic or cloned voice",
+  insufficient_audio: "Not enough clear speech to check", not_checked: "Not checked",
+};
+const CALLER_CLASS: Record<string, string> = {
+  real_victim: "Real voice, consistent with a genuine victim", possible_fake_victim: "Possible fake victim: synthetic voice presenting as a victim",
+  real_informant: "Real voice, consistent with a genuine informant", possible_fake_informant: "Possible fake informant: synthetic voice",
+  real_speaker: "Real human voice in the recording", possible_fake_speaker: "Recording may contain a synthetic or cloned voice",
+  verify_identity: "Identity not confirmed: verify before acting", undetermined: "Not determined",
+};
+const VA_SHORT: Record<string, string> = { likely_real: "Live voice", needs_verification: "Voice: verify", likely_synthetic: "Possible synthetic voice", uncertain: "Voice: unclear" };
+const VA_TONE: Record<string, "ok" | "warn" | "crit" | "neutral"> = { likely_real: "ok", needs_verification: "warn", likely_synthetic: "crit", uncertain: "neutral" };
+
+/** Is this a live human voice, or possibly synthetic / cloned? Indicative; prompts identity verification. */
+function VoiceAuthPanel({ c }: { c: CaseDetail }) {
+  const v = c.voice_auth;
+  if (!v && !c.recordings.length) return null;
+  const pct = (x: number | null | undefined) => (x === null || x === undefined ? "—" : `${Math.round(x * 100)}`);
+  const tone = v ? VA_TONE[v.verdict] : undefined;
+  return (
+    <Panel title="Voice authenticity" action={<span className="text-xs2 text-fg-3">Synthetic and cloned voice check</span>}>
+      {!v ? (
+        <p className="text-[13px] text-fg-3">Not checked yet. Recordings and live calls are checked automatically.</p>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className={clsx("text-[15px] font-semibold", tone === "crit" ? "text-crit" : tone === "warn" ? "text-warn" : tone === "ok" ? "text-ok" : "text-fg")}>{VA_LABEL[v.verdict] || v.verdict}</div>
+              <div className="text-xs2 text-fg-3">{v.model ? `Detector model + acoustic cues` : "Acoustic cues only (detector model not loaded)"}{v.recordings_checked ? ` · ${v.recordings_checked} recording${v.recordings_checked > 1 ? "s" : ""} checked` : ""}</div>
+            </div>
+            {v.score !== null && (
+              <div className="text-right"><div className="text-[20px] font-semibold tabular-nums">{pct(v.score)}</div><div className="text-[11px] text-fg-3">synthetic score</div></div>
+            )}
+          </div>
+          {v.score !== null && (
+            <div className="relative h-2 rounded-full bg-gradient-to-r from-ok-line via-warn-line to-crit-line">
+              <span className="absolute -top-0.5 h-3 w-0.5 rounded bg-fg" style={{ left: `${v.score * 100}%` }} />
+            </div>
+          )}
+          {v.caller_class && CALLER_CLASS[v.caller_class] && (
+            <div className="rounded border border-line bg-bg px-3 py-2 text-[13px]"><span className="text-fg-3">Caller: </span><span className="font-medium text-fg">{CALLER_CLASS[v.caller_class]}</span></div>
+          )}
+          <div className="grid grid-cols-3 gap-3 text-[12px]">
+            <KV k="Detector model" v={pct(v.model_score)} />
+            <KV k="Acoustic cues" v={pct(v.cue_score)} />
+            <KV k="Clear speech" v={v.cues?.voiced_s != null ? `${v.cues.voiced_s} s` : "—"} />
+          </div>
+          {v.reasons.length > 0 && <ul className="list-disc space-y-0.5 pl-4 text-[12.5px] text-fg-2">{v.reasons.map((r) => <li key={r}>{r}</li>)}</ul>}
+          {v.advice && <div className="rounded border border-warn-line bg-warn-soft px-3 py-2 text-[12.5px] text-warn">{v.advice}</div>}
+          {v.abstain.length > 0 && <div className="text-xs2 text-fg-3">{v.abstain.join(" · ")}</div>}
+          <p className="text-[11px] text-fg-4">Indicative only. A synthetic voice is a reason to verify identity, never proof that a caller is lying or is not a victim.</p>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 interface VoiceReading { t: number; silent: boolean; label: string | null; p: number | null; arousal: number | null; indicators: Record<string, number> | null; model?: string }
 const STAGE_TEXT: Record<string, string> = { listening: "Listening", transcribing: "Transcribing", loading: "Loading speech model", saving: "Saving the call", saved: "Saved", error: "Problem with one segment" };
 const SIGNALS: [string, string][] = [["distress", "Distress"], ["fear", "Fear"], ["anger", "Anger"], ["nervousness", "Nervousness"]];
 const EMO_NAME: Record<string, string> = { fearful: "Fearful", angry: "Angry", sad: "Sad", neutral: "Calm / neutral", happy: "Happy", surprised: "Surprised", disgusted: "Disgusted", uncertain: "Uncertain" };
 
 /** Live speech-emotion panel: current reading, four signals and the last ~90 s. Indicative only. */
-function LiveVoice({ readings, live }: { readings: VoiceReading[]; live: boolean }) {
+const LEVEL_UI: Record<string, [string, string]> = {
+  high: ["High distress", "border-crit bg-crit text-white"], elevated: ["Elevated distress", "border-warn bg-warn text-white"],
+  low: ["Low distress", "border-ok-line bg-ok-soft text-ok"], abstain: ["Distress: not enough signal", "border-line bg-bg text-fg-3"],
+};
+
+function LiveVoice({ readings, live, distress }: { readings: VoiceReading[]; live: boolean; distress?: CaseDetail["distress"] }) {
   const voiced = readings.filter((r) => !r.silent);
   const cur = voiced.at(-1);
   const ind = cur?.indicators || {};
@@ -192,10 +251,21 @@ function LiveVoice({ readings, live }: { readings: VoiceReading[]; live: boolean
   const tone = (v: number) => (v >= 0.6 ? "bg-crit" : v >= 0.35 ? "bg-warn" : "bg-ok");
   return (
     <div className="border-b border-line px-4 py-3">
-      <div className="mb-2 flex items-center justify-between">
-        <div className="text-xs2 font-medium text-fg-3">Voice signals {live ? "· live" : "· this session"}</div>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <div className="text-xs2 font-medium text-fg-3">Voice signals {live ? "· live" : "· this session"}</div>
+          {distress?.enabled && LEVEL_UI[distress.level] && (
+            <span className={clsx("rounded border px-2 py-0.5 text-[11.5px] font-semibold", LEVEL_UI[distress.level][1])}
+              title={(distress.reasons || []).join(" · ")}>
+              {LEVEL_UI[distress.level][0]}{(distress as any).trend && (distress as any).trend !== "steady" ? ` · ${(distress as any).trend}` : ""}
+            </span>
+          )}
+        </div>
         <div className="text-[11px] text-fg-4">Indicative only, not evidence</div>
       </div>
+      {distress?.enabled && distress.reasons?.length > 0 && (
+        <div className="mb-2 text-[11.5px] text-fg-3">{distress.reasons.slice(0, 3).join(" · ")}</div>
+      )}
       {!cur ? (
         <div className="text-[13px] text-fg-3">{live ? "Waiting for the caller to speak…" : "No voiced audio in this session."}</div>
       ) : (
@@ -252,6 +322,7 @@ function Transcript({ c, focus, onLive, run, autostart, player, onPlaySeg }: {
   const [voice, setVoice] = useState<VoiceReading[]>([]);
   const [stage, setStage] = useState<{ stage?: string; latency?: number; backlog?: number; hint?: string | null }>({});
   const [needsClick, setNeedsClick] = useState(false);
+  const [liveAuth, setLiveAuth] = useState<VoiceAuth | null>(null);
   const lastSound = useRef(0);
   const onLevel = (peak: number) => { setLevel(peak); if (peak > 0.01) lastSound.current = Date.now(); };
   const [text, setText] = useState("");
@@ -278,6 +349,7 @@ function Transcript({ c, focus, onLive, run, autostart, player, onPlaySeg }: {
           setStage((s) => ({ ...s, stage: msg.final ? "saved" : "listening", latency: msg.latency_s, backlog: msg.backlog, hint: msg.hint }));
         }
         if (msg.type === "emotion") setVoice((v) => [...v.slice(-59), msg]);
+        if (msg.type === "voice_auth") setLiveAuth(msg);
         if (msg.type === "error") setLiveErr(msg.message);
         if (msg.type === "status") { setLiveNote(msg.message); setStage((s) => ({ ...s, stage: msg.stage, backlog: msg.backlog })); }
       }, onLevel, setLiveErr);
@@ -314,7 +386,7 @@ function Transcript({ c, focus, onLive, run, autostart, player, onPlaySeg }: {
   };
 
   return (
-    <section className="panel flex max-h-[calc(100vh-150px)] min-h-[520px] flex-col xl:sticky xl:top-[72px]">
+    <section className="panel flex max-h-[calc(100vh-150px)] min-h-[420px] flex-col xl:h-full xl:max-h-none xl:min-h-0">
       <header className="panel-h">
         <h3 className="panel-t">Transcript</h3>
         <div className="flex items-center gap-1.5">
@@ -357,7 +429,14 @@ function Transcript({ c, focus, onLive, run, autostart, player, onPlaySeg }: {
         <div className="border-b border-line bg-warn-soft px-4 py-1.5 text-xs2 text-warn">No sound from the microphone. Check that the right microphone is selected and not muted.</div>
       )}
       {live && stage.hint && <div className="border-b border-line bg-bg px-4 py-1.5 text-xs2 text-fg-2">{stage.hint}</div>}
-      {(live || voice.length > 0) && c.mode !== "suspect_recording" && <LiveVoice readings={voice} live={!!live} />}
+      {(live || voice.length > 0) && c.mode !== "suspect_recording" && <LiveVoice readings={voice} live={!!live} distress={c.distress} />}
+      {live && liveAuth && liveAuth.verdict !== "insufficient_audio" && (
+        <div className={clsx("flex items-start gap-2 border-b px-4 py-2 text-xs2",
+          liveAuth.verdict === "likely_synthetic" ? "border-crit-line bg-crit-soft text-crit" : liveAuth.verdict === "needs_verification" ? "border-warn-line bg-warn-soft text-warn" : "border-line bg-bg text-fg-2")}>
+          <span className="font-semibold">Voice authenticity:</span>
+          <span>{VA_LABEL[liveAuth.verdict]}{liveAuth.score !== null ? ` (${Math.round(liveAuth.score * 100)})` : ""}{liveAuth.advice ? `. ${liveAuth.advice}` : ""}</span>
+        </div>
+      )}
       {!live && c.recordings.length > 0 && (
         <CallAudio ref={player} recordings={c.recordings} segments={c.segments} onTime={setPlayT}
           marks={c.fields.flatMap((f) => f.evidence.map((e) => ({ t: e.t_start, label: `${LABELS[f.name] || f.label}: ${f.display}` })))} />
@@ -561,29 +640,53 @@ function IconBtn({ children, title, onClick }: { children: React.ReactNode; titl
 
 /* ------------------------------------------------------------------ side tabs */
 
-function SideTabs({ c, run, reload }: { c: CaseDetail; run: (p: Promise<CaseDetail>) => Promise<void>; reload: () => void }) {
+/** Right-hand workspace: one focused view at a time instead of six stacked panels. */
+function CaseTabs({ c, run, reload, onPlay }: { c: CaseDetail; run: (p: Promise<CaseDetail>) => Promise<void>; reload: () => void; onPlay: (e: Evidence) => void }) {
   const victimLike = c.mode !== "suspect_recording";
   const linkedCount = new Set(c.links.map((l) => l.other.id)).size;
-  const tabs = [
-    ...(victimLike ? [{ k: "questions", label: "Questions", n: c.copilot.length }] : []),
-    { k: "linked", label: "Linked cases", n: linkedCount },
-    { k: "distress", label: "Distress", n: undefined },
+  const missing = c.fields.filter((f) => f.status === "predicted").length;
+  const voiceAlert = ["high", "elevated"].includes(c.distress?.level) || ["likely_synthetic", "needs_verification"].includes(c.voice_auth?.verdict || "");
+  const tabs: { k: string; label: string; n?: number; dot?: boolean }[] = [
+    { k: "overview", label: "Overview" },
+    { k: "details", label: "Details", n: missing || undefined },
+    { k: "voice", label: victimLike ? "Voice & distress" : "Voice", dot: voiceAlert },
+    { k: "linked", label: "Linked", n: linkedCount || undefined },
+    { k: "context", label: "Context" },
   ];
-  const [tab, setTab] = useState(tabs[0].k);
+  const [tab, setTab] = useState("overview");
   return (
-    <section className="panel h-fit xl:col-span-2 2xl:col-span-1">
-      <div className="flex border-b border-line px-2">
+    <div className="flex min-w-0 flex-col gap-4 xl:h-full xl:min-h-0">
+      <nav className="panel flex shrink-0 overflow-x-auto px-2 scroll-thin" aria-label="Case sections">
         {tabs.map((t) => (
-          <button key={t.k} onClick={() => setTab(t.k)} className={clsx("-mb-px flex h-10 items-center gap-1.5 border-b-2 px-2.5 text-[13px] font-medium",
-            tab === t.k ? "border-brand text-fg" : "border-transparent text-fg-3 hover:text-fg")}>
-            {t.label}{t.n !== undefined && t.n > 0 && <span className="rounded bg-bg px-1.5 text-xs2 text-fg-3">{t.n}</span>}
+          <button key={t.k} onClick={() => setTab(t.k)}
+            className={clsx("-mb-px flex h-11 shrink-0 items-center gap-1.5 border-b-2 px-2.5 text-[13px] font-medium",
+              tab === t.k ? "border-brand text-fg" : "border-transparent text-fg-3 hover:text-fg")}>
+            {t.label}
+            {t.n !== undefined && <span className="rounded bg-bg px-1.5 text-xs2 text-fg-3" title={t.k === "details" ? "Details still to verify" : undefined}>{t.n}</span>}
+            {t.dot && <span className="h-1.5 w-1.5 rounded-full bg-crit" />}
           </button>
         ))}
+      </nav>
+      <div className="scroll-thin space-y-4 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col xl:overflow-y-auto xl:[&>*:last-child]:flex-1">
+      {tab === "overview" && (
+        <>
+          {victimLike ? <Assessment c={c} /> : <RecordingAnalysis c={c} />}
+          {victimLike && c.copilot.length > 0 && (
+            <section className="panel"><header className="panel-h"><h3 className="panel-t">Ask next</h3><span className="text-xs2 text-fg-3">{c.copilot.length} suggested</span></header><Questions c={c} run={run} /></section>
+          )}
+        </>
+      )}
+      {tab === "details" && <Details c={c} run={run} onPlay={onPlay} />}
+      {tab === "voice" && (
+        <>
+          <VoiceAuthPanel c={c} />
+          <section className="panel"><header className="panel-h"><h3 className="panel-t">Distress</h3><span className="text-xs2 text-fg-3">Indicative only</span></header><Distress c={c} /></section>
+        </>
+      )}
+      {tab === "linked" && <section className="panel"><header className="panel-h"><h3 className="panel-t">Linked cases</h3></header><Linked c={c} reload={reload} /></section>}
+      {tab === "context" && (OfficialContext({ c }) || <section className="panel p-6 text-[13px] text-fg-3">No official context for this case yet. Set the district to see local figures.</section>)}
       </div>
-      {tab === "questions" && <Questions c={c} run={run} />}
-      {tab === "linked" && <Linked c={c} reload={reload} />}
-      {tab === "distress" && <Distress c={c} />}
-    </section>
+    </div>
   );
 }
 

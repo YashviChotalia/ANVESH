@@ -19,6 +19,16 @@ if (-not (Test-Path $reqStamp) -or (Get-Content $reqStamp -Raw).Trim() -ne $reqH
   & (Join-Path $Root "backend\.venv\Scripts\python.exe") -m pip install -q -r $req
   if ($LASTEXITCODE -eq 0) { Set-Content $reqStamp $reqHash }
 }
+$reqMl = Join-Path $Root "backend\requirements-ml.txt"; $reqMlStamp = Join-Path $stampDir ".reqml.sha"
+$torchDir = Join-Path $Root "backend\.venv\Lib\site-packages\torch"
+if ((Test-Path $reqMl) -and (Test-Path $torchDir)) {
+  $mlHash = (Get-FileHash $reqMl -Algorithm SHA256).Hash
+  if (-not (Test-Path $reqMlStamp) -or (Get-Content $reqMlStamp -Raw).Trim() -ne $mlHash) {
+    Write-Host "Updating speech model packages (synthetic-voice detector)..."
+    & (Join-Path $Root "backend\.venv\Scripts\python.exe") -m pip install -q -r $reqMl
+    if ($LASTEXITCODE -eq 0) { Set-Content $reqMlStamp $mlHash }
+  }
+}
 $lock = Join-Path $Root "frontend\package-lock.json"; $lockStamp = Join-Path $stampDir ".lock.sha"
 $lockHash = (Get-FileHash $lock -Algorithm SHA256).Hash
 if (-not (Test-Path $lockStamp) -or (Get-Content $lockStamp -Raw).Trim() -ne $lockHash) {

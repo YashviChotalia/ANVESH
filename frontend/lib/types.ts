@@ -31,18 +31,22 @@ export interface CaseSummary {
   id: string; created_at: string; mode: Mode; channel: string; status: string; caller_label: string;
   district?: string | null; priority: Priority; priority_score: number; synthetic: boolean;
   playbook: { key: string | null; label: string; confidence: number }; amount: number;
-  headline?: string; identity_protected?: boolean; coercion: boolean; crisis: boolean; language?: string | null; intake_seconds?: number | null;
+  headline?: string; identity_protected?: boolean; voice_flag?: boolean; coercion: boolean; crisis: boolean; language?: string | null; intake_seconds?: number | null;
 }
 export interface LinkT {
   id: number; kind: "identifier" | "script" | "voice"; score: number; status: "candidate" | "confirmed" | "rejected";
   detail: { reason?: string; type?: string; value?: string; method?: string }; other: CaseSummary;
 }
-export interface Recording { id: string; kind: string; filename: string; sha256: string; duration?: number | null; size_bytes: number; has_voiceprint: boolean; offset?: number }
+export interface Recording { id: string; kind: string; filename: string; sha256: string; duration?: number | null; size_bytes: number; has_voiceprint: boolean; offset?: number; voice_auth?: VoiceAuth | null }
+export interface VoiceAuth {
+  verdict: string; score: number | null; model_score: number | null; cue_score: number | null; model?: string | null;
+  cues?: Record<string, number | null>; reasons: string[]; abstain: string[]; advice: string | null; recordings_checked?: number; caller_class?: string;
+}
 export interface CaseDetail extends CaseSummary {
   call_started_at: string; segments: SegmentT[]; fields: CaseField[]; triage: Triage; distress: Distress;
   safety: Safety; tactics: { items?: { key: string; label: string; cues: string[] }[]; note?: string };
   copilot: Prompt[]; recordings: Recording[]; links: LinkT[]; processing?: string | null;
-  local_context?: LocalContext | null; official_scam_type?: ScamTypeContext | null; scenario?: Scenario | null;
+  local_context?: LocalContext | null; voice_auth?: VoiceAuth | null; official_scam_type?: ScamTypeContext | null; scenario?: Scenario | null;
 }
 export interface SourceRef { key?: string; title: string; publisher?: string; report: string; page: string; reference?: string; note?: string; sha256?: string; retrieved?: string }
 export interface StateStat {
