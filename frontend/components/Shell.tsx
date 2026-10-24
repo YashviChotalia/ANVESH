@@ -8,14 +8,9 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { Health } from "@/lib/types";
 
-export function Logo() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden>
-      <rect width="24" height="24" rx="5" fill="#101828" />
-      <circle cx="10.5" cy="10.5" r="5" fill="none" stroke="#fff" strokeWidth="2" />
-      <path d="M14.3 14.3 18.5 18.5" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
-    </svg>
-  );
+export function Logo({ height = 22 }: { height?: number }) {
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src="/brand/anvesh-wordmark.png" alt="Anvesh" style={{ height }} className="w-auto select-none" draggable={false} />;
 }
 
 const NAV = [
@@ -45,16 +40,16 @@ export function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen">
       <aside className="sticky top-0 hidden h-screen w-[216px] shrink-0 flex-col border-r border-line bg-surface lg:flex">
-        <Link href="/" className="flex h-14 items-center gap-2.5 border-b border-line px-4">
-          <Logo />
-          <span className="text-[15px] font-semibold tracking-[-0.01em]">Anvesh</span>
+        <Link href="/" className="flex h-14 items-center border-b border-line px-4" aria-label="Anvesh home">
+          <Logo height={21} />
         </Link>
         <nav className="flex-1 space-y-0.5 p-2">
           {NAV.map(({ href, label, icon: Icon, match }) => (
             <Link key={href} href={href}
-              className={clsx("flex h-8 items-center gap-2.5 rounded px-2.5 text-[13px] font-medium",
-                match(path) ? "bg-bg text-fg" : "text-fg-2 hover:bg-bg hover:text-fg")}>
-              <Icon size={15} strokeWidth={1.8} className={match(path) ? "text-fg" : "text-fg-3"} />
+              className={clsx("relative flex h-8 items-center gap-2.5 rounded px-2.5 text-[13px] font-medium",
+                match(path) ? "bg-brand-soft text-fg" : "text-fg-2 hover:bg-bg hover:text-fg")}>
+              {match(path) && <span className="absolute -left-2 top-1.5 h-5 w-[3px] rounded-r bg-brand" />}
+              <Icon size={15} strokeWidth={1.8} className={match(path) ? "text-brand-700" : "text-fg-3"} />
               {label}
             </Link>
           ))}

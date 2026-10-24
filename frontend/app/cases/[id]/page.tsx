@@ -262,7 +262,7 @@ function Transcript({ c, focus, onLive, run, autostart, player, onPlaySeg }: {
             <button onClick={async () => { setReplaying(true); await live.replay(15); setReplaying(false); }} disabled={replaying}
               className="btn-secondary btn-xs" title="Play back the last 15 seconds of this call"><RotateCcw size={13} /> {replaying ? "Playing…" : "Replay 15 s"}</button>
           )}
-          <button onClick={toggleLive} className={clsx("btn btn-xs", live ? "border-crit bg-crit text-white" : "border-fg bg-fg text-white")}>
+          <button onClick={toggleLive} className={clsx("btn btn-xs", live ? "border-crit bg-crit text-white" : "border-brand bg-brand text-white hover:bg-brand-600")}>
             {live ? <><Square size={11} fill="currentColor" /> Stop</> : <><Mic size={13} /> Start live</>}
           </button>
         </div>
@@ -494,7 +494,7 @@ function SideTabs({ c, run, reload }: { c: CaseDetail; run: (p: Promise<CaseDeta
       <div className="flex border-b border-line px-2">
         {tabs.map((t) => (
           <button key={t.k} onClick={() => setTab(t.k)} className={clsx("-mb-px flex h-10 items-center gap-1.5 border-b-2 px-2.5 text-[13px] font-medium",
-            tab === t.k ? "border-fg text-fg" : "border-transparent text-fg-3 hover:text-fg")}>
+            tab === t.k ? "border-brand text-fg" : "border-transparent text-fg-3 hover:text-fg")}>
             {t.label}{t.n !== undefined && t.n > 0 && <span className="rounded bg-bg px-1.5 text-xs2 text-fg-3">{t.n}</span>}
           </button>
         ))}

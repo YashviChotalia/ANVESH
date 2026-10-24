@@ -59,7 +59,7 @@ export default function Intake() {
           <div className="divide-y divide-line">
             {MODES.map((x) => (
               <label key={x.key} className={clsx("flex cursor-pointer gap-3 px-4 py-3", mode === x.key ? "bg-accent-soft/40" : "hover:bg-bg")}>
-                <input type="radio" name="mode" className="mt-1 accent-[#1849A9]" checked={mode === x.key}
+                <input type="radio" name="mode" className="mt-1 accent-[#F97A0F]" checked={mode === x.key}
                   onChange={() => { setMode(x.key); setStart(x.key === "suspect_recording" ? "upload" : "live"); }} />
                 <div className="min-w-0">
                   <div className="font-medium text-fg">{x.title}</div>
@@ -91,7 +91,7 @@ export default function Intake() {
               <div className="mt-1 inline-flex rounded border border-line2 p-0.5">
                 {SOURCES.map((s) => (
                   <button key={s.key} onClick={() => setStart(s.key)}
-                    className={clsx("h-7 rounded-[4px] px-3 text-[13px] font-medium", start === s.key ? "bg-fg text-white" : "text-fg-2 hover:text-fg")}>{s.label}</button>
+                    className={clsx("h-7 rounded-[4px] px-3 text-[13px] font-medium", start === s.key ? "bg-brand text-white" : "text-fg-2 hover:text-fg")}>{s.label}</button>
                 ))}
               </div>
             </div>

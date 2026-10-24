@@ -83,7 +83,7 @@ export const CallAudio = forwardRef<PlayerHandle, Props>(function CallAudio({ re
         onPlay={() => setPlaying(true)} onPause={() => { setPlaying(false); onTime(null); }} onEnded={() => { setPlaying(false); onTime(null); }} />
       <div className="flex items-center gap-3">
         <button onClick={() => { const a = audio.current; if (!a) return; stopAt.current = null; a.paused ? a.play() : a.pause(); }}
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-fg text-white hover:bg-[#1D2939]" title={playing ? "Pause" : "Play"}>
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand text-white hover:bg-brand-600" title={playing ? "Pause" : "Play"}>
           {playing ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" className="ml-0.5" />}
         </button>
         <button onClick={() => { const a = audio.current; if (a) a.currentTime = Math.max(a.currentTime - 10, 0); }} title="Back 10 s"
@@ -95,14 +95,14 @@ export const CallAudio = forwardRef<PlayerHandle, Props>(function CallAudio({ re
           a.currentTime = ((e.clientX - r.left) / r.width) * dur; stopAt.current = null;
         }}>
           <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-line2" />
-          <div className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-fg" style={{ width: `${pct}%` }} />
+          <div className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-brand" style={{ width: `${pct}%` }} />
           {dur > 0 && segments.filter((s) => s.recording_id === rec?.id).map((s) => (
             <span key={s.id} className="absolute top-1/2 h-2 w-px -translate-y-1/2 bg-fg-4" style={{ left: `${((s.start - offset) / dur) * 100}%` }} />
           ))}
           {dur > 0 && marks.map((m, i) => (
             <span key={i} title={m.label} className="absolute top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-[#F79009]" style={{ left: `${Math.min(Math.max(((m.t - offset) / dur) * 100, 0), 100)}%` }} />
           ))}
-          <span className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-fg shadow" style={{ left: `${pct}%` }} />
+          <span className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-brand shadow" style={{ left: `${pct}%` }} />
         </div>
         <button onClick={() => { const n = rate === 1 ? 1.5 : rate === 1.5 ? 2 : 1; setRate(n); if (audio.current) audio.current.playbackRate = n; }}
           className="mono h-6 w-10 shrink-0 rounded border border-line2 bg-surface text-[11px] text-fg-2" title="Playback speed">{rate}×</button>

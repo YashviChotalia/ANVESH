@@ -76,7 +76,7 @@ export default function Queue() {
               {([["all", "All open"], ["IMMEDIATE", "Immediate"], ["safety", "Safety alerts"], ["linked", "Linked"]] as const).map(([k, l]) => (
                 <button key={k} onClick={() => setFilter(k)}
                   className={clsx("-mb-px flex h-10 items-center gap-1.5 border-b-2 px-2.5 text-[13px] font-medium",
-                    filter === k ? "border-fg text-fg" : "border-transparent text-fg-3 hover:text-fg")}>
+                    filter === k ? "border-brand text-fg" : "border-transparent text-fg-3 hover:text-fg")}>
                   {l}<span className="rounded bg-bg px-1.5 text-xs2 text-fg-3">{counts[k]}</span>
                 </button>
               ))}
