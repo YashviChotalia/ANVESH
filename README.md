@@ -14,7 +14,7 @@ UPI-era fraud, and the golden hour after money leaves an account.
 |---|---|
 | ![Case workspace](docs/screenshots/cases_AV-2026-D0001.png) | ![Ring Linker](docs/screenshots/rings.png) |
 
-*Screens show the clearly labelled synthetic demo data from `python -m anvesh.seed`.*
+*Screens show official NCRB / I4C / DoT statistics (National data, Official context) and the labelled training scenarios from `python -m anvesh.seed`.*
 
 ---
 
@@ -78,7 +78,7 @@ cd backend
 python -m venv .venv && source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
 pip install -r requirements-ml.txt                         # speech models, installed separately (CPU is fine)
-python -m anvesh.seed --reset                              # optional: SYNTHETIC demo cases for the Ring Linker
+python -m anvesh.seed --reset                              # training scenarios for the Ring Linker (--none for an empty DB)
 uvicorn anvesh.api:app --port 8000
 ```
 
@@ -126,7 +126,13 @@ CI runs all of the above on every push.
 - Financial priority comes from reported facts with transparent rules; it does **not** predict recoverability.
 - Hashing shows files and logs were not altered after capture; it does not prove a recording is authentic,
   complete or lawfully obtained.
-- Demo data shipped with the repo is **synthetic** and labelled as such in the UI.
+- **Official data, not invented numbers.** `backend/anvesh/data/official/` holds byte-identical copies of six files published on
+  data.gov.in (NCRB *Crime in India 2023* tables 9A.1, 9A.3, 9B.3; Rajya Sabha answers with I4C NCRP complaint data and DoT
+  Chakshu scam categories). `sources.json` records each file's page, report and SHA-256; Anvesh refuses to start the data
+  view if a hash or a published total does not match. Shown on **National data** and in each case's **Official context**.
+- **Calls are training scenarios.** No government body publishes victim calls (personal data and evidence), so the call
+  transcripts are scripted. Each one reproduces a scam category from the Chakshu data, in a district covered by NCRB data,
+  and is labelled *Training scenario* in the UI. Phone numbers and UPI handles are placeholders.
 - See [`LICENSES.md`](LICENSES.md) before any commercial use of models or datasets.
 
 ## Roadmap

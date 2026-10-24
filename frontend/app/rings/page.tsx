@@ -143,7 +143,7 @@ function Rings() {
                     <div className="mt-0.5 text-xs2 text-fg-3">{r.size} cases · {r.districts.join(", ")}</div>
                     <div className="mt-1.5 flex flex-wrap gap-1">
                       {r.link_kinds.map((k) => <Tag key={k}>{KIND[k as keyof typeof KIND].label}</Tag>)}
-                      {r.synthetic && <Tag>Demo</Tag>}
+                      {r.synthetic && <Tag title="Linked training scenarios">Training</Tag>}
                     </div>
                     {r.shared_identifiers.length > 0 && <div className="mono mt-1.5 text-[11.5px] text-fg-2">{r.shared_identifiers.join(", ")}</div>}
                     <div className="mt-1 text-xs2 text-fg-3">{r.confirmed} confirmed, {r.candidates} pending review</div>

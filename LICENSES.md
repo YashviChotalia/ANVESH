@@ -18,3 +18,18 @@ it does not grant commercial rights.
 | ICFD-31k | Scam-text development | "other" | Unknown | Not used yet |
 
 No customer audio is used for training by default.
+
+## Official statistics (backend/anvesh/data/official)
+
+Published by Government of India bodies on the Open Government Data Platform (data.gov.in) under the
+Government Open Data License – India (GODL), which permits use and redistribution with attribution.
+Attribution for each file (publisher, report, page URL, SHA-256) is in `sources.json` and shown in the UI.
+
+| File | Publisher | Report |
+|---|---|---|
+| NCRB_CII_2023_Table_9A.1.csv | NCRB, Ministry of Home Affairs | Crime in India 2023, Table 9A.1 |
+| NCRB_CII_2023_Table_9A.3.csv | NCRB, Ministry of Home Affairs | Crime in India 2023, Table 9A.3 |
+| NCRB_CII_2023_Table_9B.3.csv | NCRB, Ministry of Home Affairs | Crime in India 2023, Table 9B.3 |
+| RS_Session_269_AU_1185_… | Rajya Sabha (NCRB data) | Session 269, USQ 1185 |
+| RS_Session_270_AU_1341_… | Rajya Sabha (I4C NCRP / CFCFRMS data) | Session 270, USQ 1341, 11 Feb 2026 |
+| RS_Session_270_AU_647_… | Rajya Sabha (DoT Chakshu data) | Session 270, USQ 647, 5 Feb 2026 |

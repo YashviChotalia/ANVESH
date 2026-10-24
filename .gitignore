@@ -15,3 +15,4 @@ data/
 logs/
 .venv/
 venv/
+!backend/anvesh/data/

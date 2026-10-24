@@ -42,6 +42,38 @@ export interface CaseDetail extends CaseSummary {
   call_started_at: string; segments: SegmentT[]; fields: CaseField[]; triage: Triage; distress: Distress;
   safety: Safety; tactics: { items?: { key: string; label: string; cues: string[] }[]; note?: string };
   copilot: Prompt[]; recordings: Recording[]; links: LinkT[]; processing?: string | null;
+  local_context?: LocalContext | null; official_scam_type?: ScamTypeContext | null; scenario?: Scenario | null;
+}
+export interface SourceRef { key?: string; title: string; publisher?: string; report: string; page: string; reference?: string; note?: string; sha256?: string; retrieved?: string }
+export interface StateStat {
+  name: string; cases_2021: number; cases_2022: number; cases_2023: number; change_2022_2023_pct: number | null;
+  rate_2023: number | null; chargesheet_rate_2023: number | null; fraud_2023: number | null; fraud_share_2023_pct: number | null;
+  extortion_2023?: number | null; sexual_exploitation_2023?: number | null;
+}
+export interface LocalContext {
+  district: string; state: StateStat; india: StateStat; sources: SourceRef[];
+  city?: { name: string; cases_2023: number; fraud_2023: number; fraud_share_2023_pct: number | null };
+}
+export interface ScamTypeContext { categories: string[]; reports_2025: number; reports_2024: number; share_2025_pct: number | null; source: SourceRef }
+export interface Scenario {
+  kind: string; note: string; category: string; category_source: SourceRef;
+  locality?: { district: string; state: string; state_cyber_crimes_2023: number; source: SourceRef } | null;
+}
+export interface OfficialSummary {
+  headline: {
+    cyber_crimes_2023: number; cyber_crimes_2022: number; growth_2022_2023_pct: number; growth_2019_2023_x: number;
+    fraud_share_2023_pct: number; chargesheet_rate_2023: number; rate_2023: number;
+    ncrp_complaints_latest: number; ncrp_year_latest: number; ncrp_amount_crore_latest: number;
+    ncrp_amount_crore_prev: number; ncrp_year_prev: number; ncrp_complaints_growth_x: number; ncrp_amount_total_crore: number;
+  };
+  scam_types: { category: string; playbook: string | null; y2024: number; y2025: number; y2026_partial: number; share_2025_pct: number }[];
+  scam_types_total: Record<string, number>;
+  trend: { year: number; cases: number; fraud_ipc: number; cheating_ipc: number; computer_related_it_act: number }[];
+  ncrp: { year: number; complaints: number; amount_crore: number }[];
+  motives_2023: { motive: string; cases: number; share_pct: number }[];
+  states: StateStat[];
+  cities: { name: string; cases_2023: number; fraud_2023: number; fraud_share_2023_pct: number | null }[];
+  sources: SourceRef[];
 }
 export interface Ring {
   id: string; cases: string[]; size: number; districts: string[]; total_amount: number; shared_identifiers: string[];

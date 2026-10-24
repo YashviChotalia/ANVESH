@@ -32,7 +32,8 @@ class Case(Base):
     caller_label: Mapped[str] = mapped_column(String(120), default="Unnamed caller")
     district: Mapped[str | None] = mapped_column(String(80), nullable=True)
     language: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    synthetic: Mapped[bool] = mapped_column(Boolean, default=False)
+    synthetic: Mapped[bool] = mapped_column(Boolean, default=False)  # True = scripted training scenario, not a real call
+    scenario: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # official basis for a training scenario
     priority: Mapped[str] = mapped_column(String(16), default="STANDARD")
     priority_score: Mapped[int] = mapped_column(Integer, default=0)
     playbook_key: Mapped[str | None] = mapped_column(String(32), nullable=True)

@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { FilePlus2, Inbox, ScrollText, Share2 } from "lucide-react";
+import { BarChart3, FilePlus2, Inbox, ScrollText, Share2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -17,6 +17,7 @@ const NAV = [
   { href: "/", label: "Case queue", icon: Inbox, match: (p: string) => p === "/" || p.startsWith("/cases") },
   { href: "/intake", label: "New intake", icon: FilePlus2, match: (p: string) => p.startsWith("/intake") },
   { href: "/rings", label: "Linked cases", icon: Share2, match: (p: string) => p.startsWith("/rings") },
+  { href: "/insights", label: "National data", icon: BarChart3, match: (p: string) => p.startsWith("/insights") },
   { href: "/audit", label: "Audit log", icon: ScrollText, match: (p: string) => p.startsWith("/audit") },
 ];
 

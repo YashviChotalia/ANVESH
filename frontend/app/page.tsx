@@ -6,10 +6,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { TopBar } from "@/components/Shell";
-import { Empty, ErrorNote, PriorityLabel, Tag } from "@/components/ui";
+import { Empty, ErrorNote, n, PriorityLabel, Tag } from "@/components/ui";
 import { api } from "@/lib/api";
 import { ago, inr, inrShort, MODE_LABEL } from "@/lib/format";
-import type { CaseSummary, Ring, Stats } from "@/lib/types";
+import type { CaseSummary, OfficialSummary, Ring, Stats } from "@/lib/types";
 
 type Filter = "all" | "IMMEDIATE" | "safety" | "linked";
 interface RadarGroup { key: string; label: string; last_24h: number; last_period: number; rising: boolean; districts: string[]; reported_loss: number }
@@ -20,6 +20,7 @@ export default function Queue() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [rings, setRings] = useState<Ring[]>([]);
   const [radar, setRadar] = useState<RadarGroup[]>([]);
+  const [official, setOfficial] = useState<OfficialSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
 
@@ -36,6 +37,7 @@ export default function Queue() {
       } catch (e: any) { if (alive) setErr(e.message || "Could not load cases"); }
     };
     load();
+    api.get<OfficialSummary>("/api/official").then((o) => alive && setOfficial(o)).catch(() => {});
     const t = setInterval(load, 8000);
     return () => { alive = false; clearInterval(t); };
   }, []);
@@ -56,9 +58,11 @@ export default function Queue() {
       <TopBar title="Case queue" right={<Link href="/intake" className="btn-primary"><Plus size={14} /> New intake</Link>} />
       <div className="space-y-5 p-6">
         {err && <ErrorNote msg={err} />}
+        {official && <NationalStrip o={official} />}
         {open.some((c) => c.synthetic) && (
           <div className="rounded border border-line bg-surface px-4 py-2 text-xs2 text-fg-2">
-            This queue includes <span className="font-medium text-fg">synthetic demo cases</span> (marked “synthetic” in the caller name). Names, numbers and UPI IDs are invented.
+            Calls marked <span className="font-medium text-fg">Training call</span> are scripted scenarios: governments do not publish victim calls.
+            Each one reproduces a scam type from official Chakshu data in a district covered by NCRB statistics; numbers and UPI handles are placeholders.
           </div>
         )}
 
@@ -177,5 +181,18 @@ function Metric({ label, value, sub, tone }: { label: string; value?: number | s
       <div className={clsx("mt-1 text-[22px] font-semibold leading-7 tabular-nums", tone === "crit" ? "text-crit" : "text-fg")}>{value ?? "–"}</div>
       {sub && <div className="text-xs2 text-fg-3">{sub}</div>}
     </div>
+  );
+}
+
+function NationalStrip({ o }: { o: OfficialSummary }) {
+  const h = o.headline;
+  return (
+    <Link href="/insights" className="panel group flex flex-wrap items-center gap-x-8 gap-y-2 px-4 py-2.5 text-[13px] hover:border-line2">
+      <span className="text-xs2 font-medium uppercase tracking-wide text-fg-3">India, official</span>
+      <span><b className="font-semibold tabular-nums">{n(h.cyber_crimes_2023)}</b> <span className="text-fg-2">cyber crimes in 2023</span> <span className="text-fg-3">(+{h.growth_2022_2023_pct}%)</span></span>
+      <span><b className="font-semibold tabular-nums">{(h.ncrp_complaints_latest / 1e5).toFixed(1)} lakh</b> <span className="text-fg-2">fraud complaints in {h.ncrp_year_latest}</span></span>
+      <span><b className="font-semibold tabular-nums">₹{n(h.ncrp_amount_crore_latest)} Cr</b> <span className="text-fg-2">reported lost</span></span>
+      <span className="ml-auto text-xs2 text-fg-3 group-hover:text-brand-700">NCRB · I4C · DoT →</span>
+    </Link>
   );
 }

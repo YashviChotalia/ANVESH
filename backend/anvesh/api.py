@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field as PField
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import audit, linker, pipeline, storage
+from . import audit, linker, official, pipeline, storage
 from .config import settings
 from .models import AuditEvent, Case, FieldRow, Link, Recording, Segment, SessionLocal, init_db, utcnow
 from .nlp import playbooks
@@ -105,6 +105,9 @@ def case_detail(db: Session, case: Case) -> dict:
                          key=lambda f: list(FIELD_LABELS).index(f["name"]) if f["name"] in FIELD_LABELS else 99),
         "triage": case.triage, "distress": case.distress, "safety": case.safety, "tactics": case.tactics,
         "copilot": case.copilot,
+        "local_context": official.context_for(case.district),
+        "official_scam_type": official.playbook_context(case.playbook_key),
+        "scenario": case.scenario,
         "recordings": [{"id": r.id, "kind": r.kind, "filename": r.filename, "sha256": r.sha256,
                         "duration": r.duration, "size_bytes": r.size_bytes, "offset": r.offset or 0.0,
                         "has_voiceprint": bool(r.speaker_embedding)} for r in case.recordings],
@@ -172,6 +175,20 @@ def health(db: Session = Depends(db_session)):
     db.execute(select(func.count(Case.id))).scalar()
     return {"ok": True, "version": app.version, "pipeline": pipeline.PIPELINE_VERSION, "models": M.statuses(),
             "validated_languages": list(settings.validated_languages)}
+
+
+@app.get("/api/official")
+def official_summary(who: str = Depends(actor)):
+    """Published NCRB / I4C statistics (verbatim files from data.gov.in, hash-checked)."""
+    return official.summary()
+
+
+@app.get("/api/official/context")
+def official_context(district: str, who: str = Depends(actor)):
+    ctx = official.context_for(district)
+    if not ctx:
+        raise HTTPException(404, "No official statistics mapped for this district")
+    return ctx
 
 
 @app.get("/api/stats")

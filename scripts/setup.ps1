@@ -40,7 +40,7 @@ if ($ml -ne 0) { Log "WARNING: speech-model install failed; the app runs without
 
 # 4) Self-test + demo data
 Run "backend tests" $vpy @("-m", "pytest", "-q") | Out-Null
-Run "seed synthetic demo data" $vpy @("-m", "anvesh.seed", "--reset") | Out-Null
+Run "load training scenarios" $vpy @("-m", "anvesh.seed", "--reset") | Out-Null
 Run "check speech model imports" $vpy @("-c", "import faster_whisper; print('faster-whisper OK')") | Out-Null
 
 # 5) Frontend

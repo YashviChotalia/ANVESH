@@ -1,0 +1,88 @@
+{
+  "sources": [
+    {
+      "key": "state_cyber",
+      "title": "State/UT-wise Cyber Crimes from 2021 to 2023",
+      "publisher": "National Crime Records Bureau (NCRB), Ministry of Home Affairs",
+      "report": "Crime in India 2023, Table 9A.1",
+      "page": "https://www.data.gov.in/resource/stateut-wise-cyber-crimes-2021-2023",
+      "file": "https://www.data.gov.in/files/ogdpv2dms/s3fs-public/NCRB_CII_2023_Table_9A.1_0.csv",
+      "reference": "https://www.ncrb.gov.in/uploads/files/2CrimeinIndia2023PartII2.pdf",
+      "note": "As per data provided by States/UTs. States/UTs may not be compared purely on the basis of crime figures. Crime rate = crimes per one lakh population.",
+      "filename": "NCRB_CII_2023_Table_9A.1.csv",
+      "sha256": "e832c12f62fd162183aebffad8df550e4464eeaccf8ae2aa2f00c4f7fb0d92e3",
+      "retrieved": "2026-10-24",
+      "licence": "Government Open Data License - India (GODL)"
+    },
+    {
+      "key": "state_motives",
+      "title": "State/UT-wise Cyber Crimes Motives during 2023",
+      "publisher": "National Crime Records Bureau (NCRB), Ministry of Home Affairs",
+      "report": "Crime in India 2023, Table 9A.3",
+      "page": "https://www.data.gov.in/resource/stateut-wise-cyber-crimes-motives-during-2023",
+      "file": "https://www.data.gov.in/files/ogdpv2dms/s3fs-public/NCRB_CII_2023_Table_9A.3_0.csv",
+      "reference": "https://www.ncrb.gov.in/uploads/files/2CrimeinIndia2023PartII2.pdf",
+      "note": "As per data provided by States/UTs.",
+      "filename": "NCRB_CII_2023_Table_9A.3.csv",
+      "sha256": "074f6ad9154cc22ca14075f1055910502260b7a14da276af5a2f6ea5adfbccb2",
+      "retrieved": "2026-10-24",
+      "licence": "Government Open Data License - India (GODL)"
+    },
+    {
+      "key": "city_motives",
+      "title": "City-wise Cyber Crime Motives in Metropolitan Cities during 2023",
+      "publisher": "National Crime Records Bureau (NCRB), Ministry of Home Affairs",
+      "report": "Crime in India 2023, Table 9B.3",
+      "page": "https://www.data.gov.in/resource/city-wise-cyber-crime-motives-metropolitan-cities-during-2023",
+      "file": "https://www.data.gov.in/files/ogdpv2dms/s3fs-public/NCRB_CII_2023_Table_9B.3_0.csv",
+      "reference": "https://www.ncrb.gov.in/uploads/files/2CrimeinIndia2023PartII2.pdf",
+      "note": "19 metropolitan cities (population over 2 million).",
+      "filename": "NCRB_CII_2023_Table_9B.3.csv",
+      "sha256": "fe6abb46d341003fd920c2f191cedbcb71334d3743b164a79a842c8edf914b84",
+      "retrieved": "2026-10-24",
+      "licence": "Government Open Data License - India (GODL)"
+    },
+    {
+      "key": "crime_heads",
+      "title": "Crime Heads-wise Number of Cases Registered under Cyber Crimes from 2019 to 2023",
+      "publisher": "Rajya Sabha (data from NCRB, Crime in India)",
+      "report": "Rajya Sabha Session 269, Unstarred Question 1185",
+      "page": "https://www.data.gov.in/resource/crime-heads-wise-number-cases-registered-under-cyber-crimes-2019-2023",
+      "file": "https://www.data.gov.in/files/ogdpv2dms/s3fs-public/605334490/Version_1/RS_Session_269_AU_1185_A_to_D.1.csv",
+      "reference": "https://sansad.in/rs/questions/questions-and-answers",
+      "note": "IPC heads shown as published (pre-BNS).",
+      "filename": "RS_Session_269_AU_1185_cyber_crime_heads_2019_2023.csv",
+      "sha256": "6e4bcb1c35e0d2ee809504ab44c3688f865ed1bfb7956cbed6c260cd98aaba13",
+      "retrieved": "2026-10-24",
+      "licence": "Government Open Data License - India (GODL)"
+    },
+    {
+      "key": "ncrp_fraud",
+      "title": "Year-wise Total Number of Financial Fraud Complaints and Amount Reported by Citizens due to Cyber Frauds, 2021 to 2025",
+      "publisher": "Rajya Sabha (answer by Ministry of Home Affairs; data from I4C NCRP and CFCFRMS)",
+      "report": "Rajya Sabha Session 270, Unstarred Question 1341, answered 11 February 2026",
+      "page": "https://www.data.gov.in/resource/year-wise-details-total-number-financial-frauds-complaints-and-amount-reported-citizens",
+      "file": "https://www.data.gov.in/files/ogdpv2dms/s3fs-public/605146642/Version_1/RS_Session_270_AU_1341_A_to_D.csv",
+      "reference": "https://sansad.in/rs/questions/questions-and-answers",
+      "note": "Amount in Rs crore. Data is dynamic, as per National Cyber Crime Reporting Portal and Citizen Financial Cyber Fraud Reporting and Management System operated by I4C.",
+      "filename": "RS_Session_270_AU_1341_ncrp_financial_fraud_2021_2025.csv",
+      "sha256": "757f66def07209893dca8045f567605ae6e2e76ac13946244968f812798d1cb6",
+      "retrieved": "2026-10-24",
+      "licence": "Government Open Data License - India (GODL)"
+    },
+    {
+      "key": "chakshu",
+      "title": "Category-wise Number of Suspected Fraud Communications Reported through the Chakshu Portal from 2024 to 2026",
+      "publisher": "Rajya Sabha (answer by Ministry of Communications; Chakshu facility on Sanchar Saathi, Department of Telecommunications)",
+      "report": "Rajya Sabha Session 270, Unstarred Question 647, answered 5 February 2026",
+      "page": "https://www.data.gov.in/resource/category-wise-number-suspected-fraud-communications-reported-through-chakshu-portal-2024",
+      "file": "https://www.data.gov.in/files/ogdpv2dms/s3fs-public/605144006/Version_1/RS_Session_270_AU_647_A.csv",
+      "reference": "https://sansad.in/rs/questions/questions-and-answers",
+      "note": "Suspected fraud communications reported by citizens (calls, SMS, WhatsApp). 2026 is a partial year as on the date of the answer.",
+      "filename": "RS_Session_270_AU_647_chakshu_fraud_categories_2024_2026.csv",
+      "sha256": "e841d1c4c187cc8c58adae4d1ce0fc97111d05eb7858f4233a1179f6999d6a6f",
+      "retrieved": "2026-10-24",
+      "licence": "Government Open Data License - India (GODL)"
+    }
+  ]
+}

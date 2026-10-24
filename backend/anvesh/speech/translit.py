@@ -38,7 +38,7 @@ LOANWORDS = {
     "डिजिटल": "digital", "अरेस्ट": "arrest", "फ्रॉड": "fraud", "स्कैम": "scam", "मैसेज": "message",
     "आधार": "Aadhaar", "पैन": "PAN", "आईएफएससी": "IFSC", "यूटीआर": "UTR", "ट्रांजैक्शन": "transaction",
     "आईडी": "ID", "डेबिट": "debit", "क्रेडिट": "credit", "ओके": "ok", "हेलो": "hello", "हैलो": "hello",
-    "ओकेएक्सिस": "okaxis", "वाईबीएल": "ybl", "पेटीएम": "Paytm", "जीपे": "GPay",
+    "ओकेएक्सिस": "okaxis", "वाईबीएल": "ybl", "जीपे": "GPay",
 }
 
 # casual spellings for very common words after transliteration

@@ -7,7 +7,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CallAudio, type PlayerHandle } from "@/components/CallAudio";
 import { TopBar } from "@/components/Shell";
-import { Empty, ErrorNote, KV, Panel, PriorityBadge, StatusTag, Tag } from "@/components/ui";
+import { Empty, ErrorNote, KV, n, Panel, PriorityBadge, SourceNote, StatusTag, Tag } from "@/components/ui";
 import { api } from "@/lib/api";
 import { inr, MODE_LABEL, SPEAKER_LABEL, ts } from "@/lib/format";
 import { startLive, type LiveHandle } from "@/lib/live";
@@ -108,7 +108,7 @@ function Workspace() {
           <span className="text-fg-2">{c.district || "District not set"}</span>
           <span className="text-fg-2">{c.playbook.label}</span>
           {c.language && <span className="uppercase text-fg-3">{c.language}</span>}
-          {c.synthetic && <Tag>Synthetic demo data</Tag>}
+          {c.synthetic && <Tag title={c.scenario?.note || "Scripted training call"}>Training scenario</Tag>}
         </div>
 
         {err && <ErrorNote msg={err} />}
@@ -132,6 +132,7 @@ function Workspace() {
           <div className="space-y-4">
             {victimLike ? <Assessment c={c} /> : <RecordingAnalysis c={c} />}
             <Details c={c} run={run} onPlay={playAt} />
+            <OfficialContext c={c} />
           </div>
           <SideTabs c={c} run={run} reload={load} />
         </div>
@@ -729,5 +730,41 @@ function Toasts({ items, onClose }: { items: { id: number; tone: "crit" | "warn"
         </div>
       ))}
     </div>
+  );
+}
+
+
+function OfficialContext({ c }: { c: CaseDetail }) {
+  const lc = c.local_context, st = c.official_scam_type, sc = c.scenario;
+  if (!lc && !st && !sc) return null;
+  const pct = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${v}%`);
+  const srcs = [...(st ? [st.source] : []), ...(lc?.sources || [])];
+  return (
+    <Panel title="Official context" action={<span className="text-xs2 text-fg-3">Published government data</span>}>
+      {sc && (
+        <div className="mb-4 rounded border border-line bg-bg px-3 py-2 text-xs2 leading-[17px] text-fg-2">
+          <span className="font-medium text-fg">Training scenario.</span> {sc.note} Scam type reproduced: <span className="text-fg">{sc.category}</span>.
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+        {st && (
+          <>
+            <KV className="col-span-2" k="This scam type, reported nationally (Chakshu)" v={
+              <span><span className="text-[18px] font-semibold tabular-nums">{n(st.reports_2025)}</span> <span className="text-fg-3">reports in 2025 · {pct(st.share_2025_pct)} of all · {n(st.reports_2024)} in 2024</span></span>} />
+            <div className="col-span-2 -mt-3 text-xs2 text-fg-3">{st.categories.join(" · ")}</div>
+          </>
+        )}
+        {lc && (
+          <>
+            <KV k={`Cyber crimes, ${lc.state.name} (2023)`} v={<span className="tabular-nums"><b className="font-semibold">{n(lc.state.cases_2023)}</b> <span className="text-fg-3">{lc.state.change_2022_2023_pct !== null && `${lc.state.change_2022_2023_pct > 0 ? "+" : ""}${lc.state.change_2022_2023_pct}% vs 2022`}</span></span>} />
+            <KV k="Share with fraud motive" v={<span className="tabular-nums"><b className="font-semibold">{pct(lc.state.fraud_share_2023_pct)}</b> <span className="text-fg-3">India {pct(lc.india.fraud_share_2023_pct)}</span></span>} />
+            <KV k="Crime rate per lakh" v={<span className="tabular-nums"><b className="font-semibold">{lc.state.rate_2023 ?? "—"}</b> <span className="text-fg-3">India {lc.india.rate_2023}</span></span>} />
+            <KV k="Chargesheeting rate" v={<span className="tabular-nums"><b className="font-semibold">{pct(lc.state.chargesheet_rate_2023)}</b> <span className="text-fg-3">India {pct(lc.india.chargesheet_rate_2023)}</span></span>} />
+            {lc.city && <KV className="col-span-2" k={`${lc.city.name}, metropolitan city (2023)`} v={<span className="tabular-nums"><b className="font-semibold">{n(lc.city.cases_2023)}</b> cyber crimes · {n(lc.city.fraud_2023)} with fraud motive</span>} />}
+          </>
+        )}
+      </div>
+      {srcs.length > 0 && <SourceNote sources={srcs} className="mt-4 border-t border-line pt-3" />}
+    </Panel>
   );
 }

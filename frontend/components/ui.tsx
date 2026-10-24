@@ -80,3 +80,20 @@ export function KV({ k, v, className }: { k: string; v: React.ReactNode; classNa
     </div>
   );
 }
+
+export function SourceNote({ sources, className }: { sources: import("@/lib/types").SourceRef[]; className?: string }) {
+  return (
+    <div className={clsx("text-xs2 leading-[17px] text-fg-3", className)}>
+      Source:{" "}
+      {sources.map((s, i) => (
+        <span key={s.page}>
+          {i > 0 && "; "}
+          <a href={s.page} target="_blank" rel="noreferrer" className="text-fg-2 underline decoration-line2 underline-offset-2 hover:text-fg">{s.report}</a>
+        </span>
+      ))}
+      {" "}via data.gov.in
+    </div>
+  );
+}
+
+export const n = (v: number | null | undefined) => (v === null || v === undefined ? "—" : v.toLocaleString("en-IN"));
